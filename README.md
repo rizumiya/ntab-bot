@@ -77,8 +77,8 @@ Tiap album ditutup dengan perintah lanjutan yang tinggal disalin, mis. `/wh suns
 ```text
 @nama_bot .wh sunset
 @nama_bot .kr solo leveling
-@nama_bot .bm            galeri bookmark sendiri
-@nama_bot sunset         tanpa awalan = mesin bawaan (Wallhaven)
+@nama_bot .bm              galeri bookmark sendiri
+@nama_bot                  tanpa awalan = list seluruh menu inline
 ```
 
 **3. Tombol.** Setiap hasil membawa tombol:
