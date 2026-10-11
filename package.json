@@ -1,0 +1,38 @@
+{
+  "name": "ntab-telegram-bot",
+  "version": "3.0.0",
+  "description": "Bot Telegram modular: inti menyediakan alat, modul menyediakan fitur",
+  "main": "dist/main.js",
+  "scripts": {
+    "dev": "tsx src/main.ts",
+    "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc",
+    "start": "node --disable-warning=ExperimentalWarning dist/main.js",
+    "typecheck": "tsc --noEmit",
+    "smoke": "tsx scripts/smoke.ts"
+  },
+  "keywords": [
+    "telegram",
+    "bot",
+    "inline-query",
+    "grammy",
+    "modular"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@grammyjs/auto-retry": "^2.0.2",
+    "@grammyjs/runner": "^2.0.3",
+    "cheerio": "^1.0.0",
+    "dotenv": "^16.4.7",
+    "grammy": "^1.34.0",
+    "undici": "^8.11.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  }
+}
