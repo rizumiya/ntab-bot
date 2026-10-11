@@ -1,0 +1,12 @@
+.git
+.backup
+.env
+.env.*
+!.env.example
+data
+dist
+node_modules
+*.db
+*.db-shm
+*.db-wal
+*.log

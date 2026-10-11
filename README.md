@@ -214,7 +214,7 @@ Semua pengaturan ada di `.env` dan dibaca di satu tempat: [`src/core/config.ts`]
 
 **Tentang image proxy.** Tanpa proxy, semua fitur tetap jalan; hanya thumbnail Gelbooru (jalur HTML) di mode inline yang bisa tidak tampil. Proxy hanya melayani domain di daftar izin dan hanya URL yang ditandatangani bot, jadi tidak bisa ditumpangi pihak luar.
 
-Proxy harus beralamat **HTTPS dengan nama domain**, bukan `http://IP:port`: Telegram hanya mau mengambil gambar inline lewat HTTPS bersertifikat sah, dan sertifikat gratis tidak diterbitkan untuk alamat IP. Contoh konfigurasi nginx: [`deploy/nginx-ntab.conf`](deploy/nginx-ntab.conf).
+Proxy harus beralamat **HTTPS dengan nama domain**, bukan `http://IP:port`: Telegram hanya mau mengambil gambar inline lewat HTTPS bersertifikat sah, dan sertifikat gratis tidak diterbitkan untuk alamat IP. Pada VPS Docker, proxy perlu route khusus melalui Cloudflare Tunnel; tidak ada port host yang dibuka otomatis.
 
 ---
 
@@ -224,73 +224,55 @@ Proxy harus beralamat **HTTPS dengan nama domain**, bukan `http://IP:port`: Tele
 
 ## Deploy ke VPS
 
-Dijalankan sebagai service systemd biasa. **Tanpa Docker**, tanpa membuka port, tanpa mengubah firewall.
+Bot dijalankan sebagai stack Docker Compose di `/opt/stacks/ntab-bot`, mengikuti jaringan `edge` dan batas sumber daya stack lain. Tidak ada port host yang dibuka. Panduan pemasangan, pembaruan, pemulihan database, dan operasional: [DEPLOY.md](DEPLOY.md).
 
-### Pemasangan pertama
+### Pemasangan pertama (Docker Compose)
 
-Di VPS (Ubuntu/Debian dengan Node.js 22.13+):
+Pastikan Docker Compose aktif dan jaringan `edge` tersedia:
 
 ```bash
-sudo useradd --system --home /opt/ntab-bot --shell /usr/sbin/nologin ntab
+ssh rizumiya 'docker compose ls'
+ssh rizumiya 'docker network inspect edge --format "{{.Name}}"'
 ```
 
+Siapkan `/opt/stacks/ntab-bot/.env` berdasarkan [`.env.example`](.env.example), lalu kunci izinnya:
+
 ```bash
-sudo mkdir -p /opt/ntab-bot/data && sudo chown -R ntab:ntab /opt/ntab-bot && sudo chmod 750 /opt/ntab-bot
+chmod 600 /opt/stacks/ntab-bot/.env
 ```
 
-Buat `/opt/ntab-bot/.env` (isi seperti `.env.example`), lalu kunci izinnya:
+Jalankan container dari folder stack:
 
 ```bash
-sudo chown ntab:ntab /opt/ntab-bot/.env && sudo chmod 600 /opt/ntab-bot/.env
-```
-
-Dari komputer Anda, kirim kode dan build:
-
-```bash
-./deploy.sh user@alamat-vps ~/.ssh/kunci
-```
-
-Pasang service (sekali saja):
-
-```bash
-sudo cp /opt/ntab-bot/deploy/ntab-bot.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable --now ntab-bot
+cd /opt/stacks/ntab-bot && docker compose up -d --build
 ```
 
 ### Memperbarui
 
 ```bash
-./deploy.sh user@alamat-vps ~/.ssh/kunci
+cd /opt/stacks/ntab-bot && docker compose up -d --build
 ```
 
-Skrip ini menjalankan pemeriksaan tipe dan uji, mengirim kode (tanpa `node_modules`, `data`, `.env`), build di server dengan prioritas rendah, me-restart **hanya** bot, lalu memastikan bot benar-benar aktif dan layanan lain di server tidak berubah.
+Panduan langkah demi langkah untuk mengirim kode tracked tanpa `.env` atau database: [DEPLOY.md](DEPLOY.md).
 
 | Perintah | Fungsi |
 |---|---|
-| `./deploy.sh user@host kunci` | Kirim versi terbaru |
-| `./deploy.sh user@host kunci status` | Lihat keadaan server tanpa mengubah apa pun |
-| `./deploy.sh user@host kunci rollback` | Kembalikan versi sebelum deploy terakhir |
-
-**Panduan langkah demi langkah, termasuk apa yang tidak boleh disentuh di server bersama: [DEPLOY.md](DEPLOY.md).**
+| `docker compose up -d --build` | Build dan terapkan kode terbaru |
+| `docker compose ps` | Lihat keadaan container |
+| `docker compose logs -f` | Lihat log langsung |
 
 ### Batas sumber daya
 
-Diatur di [`deploy/ntab-bot.service`](deploy/ntab-bot.service), supaya bot tidak mengganggu layanan lain di server yang sama:
+Diatur di [`compose.yml`](compose.yml), supaya bot tidak mengganggu layanan lain di server yang sama:
 
 | Batas | Nilai | Akibat bila terlampaui |
 |---|---|---|
-| `MemoryMax` | 512 MB | Bot dimatikan lalu dinyalakan ulang otomatis |
-| `CPUQuota` | 80% dari satu core | Bot diperlambat, layanan lain tidak terdampak |
-| `Nice` | 10 | Bot mengalah saat CPU diperebutkan |
+| `mem_limit` | 512 MB | Container dibatasi; Docker dapat menghentikannya jika kehabisan memori |
+| `cpus` | 0,8 core | Pemakaian CPU container dibatasi |
 
 Terukur saat diam: sekitar 40 MB memori dan CPU mendekati nol. Memori naik sementara saat mengirim album atau mengonversi video.
 
-### FFmpeg (opsional)
-
-Tanpa FFmpeg, `/mp3`, `/gif`, dan `/ugoira` membalas "belum tersedia"; fitur lain tidak terpengaruh.
-
-```bash
-sudo apt install -y ffmpeg
-```
+Image Docker sudah menyertakan FFmpeg untuk `/mp3`, `/gif`, dan `/ugoira`.
 
 ---
 
@@ -298,15 +280,15 @@ sudo apt install -y ffmpeg
 
 | Keperluan | Perintah |
 |---|---|
-| Status service | `systemctl status ntab-bot` |
-| Log langsung | `sudo journalctl -u ntab-bot -f` |
-| Restart | `sudo systemctl restart ntab-bot` |
-| Hentikan | `sudo systemctl stop ntab-bot` |
-| Pemakaian memori dan CPU | `/status` di chat bot, atau `systemctl status ntab-bot` |
+| Status | `cd /opt/stacks/ntab-bot && docker compose ps` |
+| Log langsung | `cd /opt/stacks/ntab-bot && docker compose logs -f` |
+| Restart | `cd /opt/stacks/ntab-bot && docker compose restart` |
+| Hentikan | `cd /opt/stacks/ntab-bot && docker compose stop` |
+| Pemakaian memori dan CPU | `/status` di chat bot atau `docker stats --no-stream ntab-bot` |
 
 **Backup.** Database dikirim otomatis ke chat owner setiap 24 jam (jadwalnya tidak kacau oleh restart). Backup manual: `/backup`.
 
-**Memulihkan.** Hentikan service, ganti `/opt/ntab-bot/data/bot.db` dengan berkas backup, hapus `bot.db-wal` dan `bot.db-shm` bila ada, pastikan pemiliknya `ntab`, lalu jalankan lagi.
+**Memulihkan.** Hentikan container, ganti `/opt/stacks/ntab-bot/data/bot.db` dengan berkas backup, hapus `bot.db-wal` dan `bot.db-shm` bila ada, pastikan pemiliknya UID 1000, lalu jalankan lagi.
 
 **Perawatan otomatis.** Setiap hari bot membuang kuota lama dan cache `file_id` berumur lebih dari 180 hari. Folder sementara dibersihkan setiap selesai dipakai dan saat bot menyala.
 
@@ -425,13 +407,13 @@ Modul = `src/modules/<nama>/index.ts` yang mengekspor `BotModule` sebagai `defau
 | Gejala | Penyebab dan solusi |
 |---|---|
 | Bot tidak merespons, log berisi `409 Conflict` | Token yang sama sedang dipakai proses lain. Hentikan salah satunya |
-| `BOT_TOKEN belum diisi` | `.env` belum ada, atau tidak berada di folder kerja service |
+| `BOT_TOKEN belum diisi` | `.env` belum ada atau tidak berada di folder stack |
 | Tombol **File HD** memunculkan "tekan Start dulu" | Pengguna belum pernah membuka chat pribadi dengan bot |
 | Mode inline tidak muncul | Aktifkan *Inline Mode* di @BotFather (`/setinline`) |
 | Bot tidak membaca pesan di grup | Perintah `/...` selalu terbaca. Untuk perintah titik (`.wh`) dan arsip tautan, matikan *Group Privacy* di @BotFather atau jadikan bot admin |
-| `/mp3`, `/gif` membalas "FFmpeg belum terpasang" | Pasang FFmpeg (lihat bagian Deploy) |
+| `/mp3`, `/gif` membalas "FFmpeg belum terpasang" | Pastikan image Docker dibangun ulang dengan `docker compose up -d --build` |
 | Pencarian selalu kosong saat dijalankan lokal | ISP memblokir situs sumber. Setel `ENABLE_CUSTOM_DNS=true` |
 | Thumbnail Gelbooru kosong di inline | Butuh image proxy (lihat Konfigurasi) |
 | `.px` atau `.gb` tidak menampilkan apa pun | Cari `inline gagal` di log. Penyebab umum: situs sumber menolak, atau hasil melanggar batas Telegram |
 | Sebuah modul hilang dari menu | Modul gagal dimuat. Cari `gagal dimuat` di log; modul lain tetap jalan |
-| Bot sering restart | Cek `journalctl -u ntab-bot`. Bila karena `MemoryMax`, turunkan `MAX_ALBUM_JOBS` |
+| Bot sering restart | Cek `docker compose logs`. Bila karena batas memori, turunkan `MAX_ALBUM_JOBS` |

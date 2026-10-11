@@ -13,7 +13,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 process.on("unhandledRejection", (reason) => {
   console.error("[Proses] Promise gagal tanpa penanganan:", reason);
 });
-// Setelah exception tak tertangani, kondisi proses tidak bisa dipercaya: keluar dan biarkan systemd menyalakan ulang.
+// Setelah exception tak tertangani, kondisi proses tidak bisa dipercaya: keluar dan biarkan restart policy menyalakan ulang.
 process.on("uncaughtException", (err) => {
   console.error("[Proses] Exception fatal:", err);
   process.exit(1);

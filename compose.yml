@@ -1,0 +1,23 @@
+services:
+  ntab-bot:
+    image: ntab-bot:local
+    build:
+      context: .
+    container_name: ntab-bot
+    init: true
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      DATA_DIR: /app/data
+    volumes:
+      - ./data:/app/data
+    networks:
+      - edge
+    restart: unless-stopped
+    mem_limit: 512m
+    cpus: 0.8
+
+networks:
+  edge:
+    external: true
