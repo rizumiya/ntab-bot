@@ -29,7 +29,7 @@ Bot Telegram modular untuk mencari gambar anime dan wallpaper dari banyak sumber
 | 📷 Realbooru | `/rp` | `.rp` | VIP | Foto cosplay dan model (seluruhnya konten dewasa) |
 | 🎨 Pixiv | `/px` | `.px` | VIP | Fanart per tag, paket per ID karya, atau karya per ID kreator |
 | 📚 Kiryuu | `/kr` | `.kr` | Gratis | Komik berbahasa Indonesia, baca di Telegram |
-| 🎬 Media Tools | `/mp3`, `/gif`, `/ugoira` | - | Gratis | Video ke MP3/GIF, animasi Pixiv ke video |
+| 🎬 Media Tools | `/mp3`, `/mp4`, `/gif`, `/ugoira` | - | Gratis | Ambil audio, kompres video MP4, ubah video ke GIF, animasi Pixiv ke video |
 | 🔍 Cari Sumber Gambar | `/sauce` | - | Gratis | Judul anime dan episode, atau kreator sebuah fanart |
 | 👥 Moderasi Grup | `/warn`, `/mute`, `/ban`, `/setwelcome`, ... | - | Gratis | Peringatan bertingkat, bisukan, sambutan, aturan |
 | 🔗 Stiker & Tautan | `/stickers`, `/linklog`, `/links` | `.st` | Gratis | Indeks paket stiker, arsip tautan grup |
@@ -158,7 +158,7 @@ Di panel admin, **Fitur global** mematikan sebuah fitur bagi semua pengguna, mis
 
 ## Menjalankan di komputer sendiri
 
-Butuh **Node.js 22.13 atau lebih baru** (bot memakai `node:sqlite` bawaan). FFmpeg hanya perlu untuk `/mp3`, `/gif`, dan `/ugoira`.
+Butuh **Node.js 22.13 atau lebih baru** (bot memakai `node:sqlite` bawaan). FFmpeg diperlukan untuk `/mp3`, `/mp4`, `/gif`, dan `/ugoira`.
 
 ```bash
 npm install
@@ -272,7 +272,7 @@ Diatur di [`compose.yml`](compose.yml), supaya bot tidak mengganggu layanan lain
 
 Terukur saat diam: sekitar 40 MB memori dan CPU mendekati nol. Memori naik sementara saat mengirim album atau mengonversi video.
 
-Image Docker sudah menyertakan FFmpeg untuk `/mp3`, `/gif`, dan `/ugoira`.
+Image Docker sudah menyertakan FFmpeg untuk `/mp3`, `/mp4`, `/gif`, dan `/ugoira`.
 
 ---
 
@@ -353,6 +353,8 @@ Salin salah satu templat, ubah isinya, jalankan ulang bot:
 
 Modul = `src/modules/<nama>/index.ts` yang mengekspor `BotModule` sebagai `default`. Menu, halaman bantuan, daftar perintah Telegram, dan tombol on/off terbentuk otomatis dari isinya.
 
+Pada scraper, rating mengikuti aturan situs sumber, bukan satu standar universal. Contohnya Danbooru memakai `g` (umum), `s` (sensitif), `q` (meragukan/dewasa), dan `e` (eksplisit); sesuaikan tipe serta penanda NSFW jika situs lain memakai kode berbeda.
+
 ### Isi `BotModule`
 
 | Bagian | Fungsi |
@@ -411,7 +413,7 @@ Modul = `src/modules/<nama>/index.ts` yang mengekspor `BotModule` sebagai `defau
 | Tombol **File HD** memunculkan "tekan Start dulu" | Pengguna belum pernah membuka chat pribadi dengan bot |
 | Mode inline tidak muncul | Aktifkan *Inline Mode* di @BotFather (`/setinline`) |
 | Bot tidak membaca pesan di grup | Perintah `/...` selalu terbaca. Untuk perintah titik (`.wh`) dan arsip tautan, matikan *Group Privacy* di @BotFather atau jadikan bot admin |
-| `/mp3`, `/gif` membalas "FFmpeg belum terpasang" | Pastikan image Docker dibangun ulang dengan `docker compose up -d --build` |
+| `/mp3`, `/mp4`, `/gif` membalas "FFmpeg belum terpasang" | Pastikan image Docker dibangun ulang dengan `docker compose up -d --build` |
 | Pencarian selalu kosong saat dijalankan lokal | ISP memblokir situs sumber. Setel `ENABLE_CUSTOM_DNS=true` |
 | Thumbnail Gelbooru kosong di inline | Butuh image proxy (lihat Konfigurasi) |
 | `.px` atau `.gb` tidak menampilkan apa pun | Cari `inline gagal` di log. Penyebab umum: situs sumber menolak, atau hasil melanggar batas Telegram |

@@ -7,7 +7,7 @@ import { BotModule, BotContext } from "../../core/engine/types";
 import { config } from "../../core/config";
 import { fetchJson, downloadToFile, withTempDir } from "../../core/tools/http";
 import { Semaphore } from "../../core/tools/limit";
-import { downloadTelegramFile, TG_DOWNLOAD_MAX } from "../../core/tools/media";
+import { downloadTelegramFile, TG_DOWNLOAD_MAX, TG_UPLOAD_MAX } from "../../core/tools/media";
 import { htmlEscape } from "../../core/tools/text";
 import { progress, reply } from "../../core/tools/ui";
 
@@ -179,12 +179,60 @@ const mediaTools: BotModule = {
     version: "2.0.0",
   },
   help: [
-    "Balas (reply) pesan berisi video, lalu kirim perintahnya.",
+    "Balas (reply) pesan berisi video, lalu kirim perintahnya: /mp3, /gif, atau /mp4.",
+    "/mp4 mengompres video H.264 (preset veryfast, CRF 28) tanpa mengubah resolusi; hasil dikirim sebagai file baru, video asli tidak ditimpa.",
     "Ukuran berkas maksimal 20 MB (batas unduh bot Telegram).",
     "Konversi diproses satu per satu; bila server sibuk, coba lagi sebentar kemudian.",
   ],
 
   commands: [
+    {
+      command: "mp4",
+      description: "Kompres video menjadi MP4 yang lebih kecil",
+      usage: "balas video dengan /mp4",
+      listed: true,
+      async handler(ctx) {
+        const media = repliedMedia(ctx, false);
+        if (!media) return reply(ctx, "ℹ️ Balas (reply) pesan berisi video dengan <code>/mp4</code>.");
+        if (tooBig(media)) return reply(ctx, "⚠️ Berkas terlalu besar. Maksimal 20 MB.");
+
+        await convert(ctx, "Mengompres video menjadi MP4...", async (dir) => {
+          const input = await downloadTelegramFile(ctx, media.file_id, dir);
+          const out = path.join(dir, "compressed.mp4");
+          const inputSize = fs.statSync(input).size;
+
+          // Preset yang dipakai VideoToolkit: ukuran lebih kecil dengan penurunan visual
+          // yang biasanya sulit terlihat. Resolusi dan frame rate sumber dipertahankan.
+          await runFfmpeg([
+            "-i", input,
+            "-map", "0:v:0",
+            "-map", "0:a?",
+            "-map_metadata", "0",
+            "-c:v", "libx264",
+            "-preset", "veryfast",
+            "-crf", "28",
+            "-c:a", "aac",
+            "-b:a", "128k",
+            "-movflags", "+faststart",
+            out,
+          ]);
+
+          const outputSize = fs.statSync(out).size;
+          if (outputSize >= inputSize) {
+            throw new Error("Hasil kompresi tidak lebih kecil dari video asli; tidak mengirim hasil yang justru lebih besar.");
+          }
+          if (outputSize > TG_UPLOAD_MAX) {
+            throw new Error("Hasil masih melebihi batas kirim Telegram 50 MB.");
+          }
+
+          const savedPercent = Math.round((1 - outputSize / inputSize) * 100);
+          const sizeMb = (size: number) => `${(size / 1024 / 1024).toFixed(1)} MB`;
+          await ctx.replyWithVideo(new InputFile(out, "compressed.mp4"), {
+            caption: `✅ Video terkompresi\n${sizeMb(inputSize)} → ${sizeMb(outputSize)} (hemat ${savedPercent}%). Video asli tidak diubah.`,
+          });
+        });
+      },
+    },
     {
       command: "mp3",
       aliases: ["toaudio"],
