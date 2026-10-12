@@ -1,3 +1,4 @@
+import * as cheerio from "cheerio";
 import { InlineKeyboard } from "grammy";
 import { defineScraper, DefineScraperConfig, ScraperItem } from "../../core/sdk/defineScraper";
 import { createMangaReader } from "../../core/sdk/mangaReader";
@@ -5,6 +6,7 @@ import { nsfwAllowed } from "../../core/engine/gate";
 import { config } from "../../core/config";
 import { fetchJson } from "../../core/tools/http";
 import { TtlCache } from "../../core/tools/cache";
+import { isMinorContent } from "../../core/tools/tags";
 import { htmlEscape, htmlToText, truncate } from "../../core/tools/text";
 import { cb, progress, reply } from "../../core/tools/ui";
 
@@ -34,7 +36,10 @@ const api = <T>(pathAndQuery: string) => fetchJson<T>(`${SITE}/wp-json${pathAndQ
 // DATA
 // ============================================================================
 const genreCache = new TtlCache<"genres", Map<string, number>>(24 * 60 * 60_000, 1);
-const feedCache = new TtlCache<string, { title: string; info?: string; chapters: Array<{ id: string; number: string }> }>(15 * 60_000, 30);
+const feedCache = new TtlCache<string, { title: string; info?: string; chapters: Array<{ id: string; number: string }>; blocked?: boolean }>(
+  15 * 60_000,
+  30
+);
 const pagesCache = new TtlCache<string, { urls: string[]; mangaId?: string; number: string }>(30 * 60_000, 200);
 
 /** Daftar genre situs: nama (huruf kecil) -> ID. */
@@ -56,6 +61,14 @@ async function getGenres(): Promise<Map<string, number>> {
   return genres;
 }
 
+const isAdult = (m: KiryuuManga) => (m.metadata?.tax ?? []).some((t) => t.taxonomy === "genre" && ADULT_GENRES.has(t.slug));
+
+/** Komik bergenre anak di bawah umur (mis. Lolicon, Shotacon) tidak ditampilkan dan tidak bisa dibaca lewat bot. */
+function isBlocked(m: KiryuuManga): boolean {
+  const genres = (m.metadata?.tax ?? []).filter((t) => t.taxonomy === "genre").flatMap((t) => [t.slug, t.name]);
+  return isMinorContent(genres, isAdult(m));
+}
+
 function toItem(m: KiryuuManga): ScraperItem {
   const tax = m.metadata?.tax ?? [];
   const names = (taxonomy: string) => tax.filter((t) => t.taxonomy === taxonomy).map((t) => t.name);
@@ -70,7 +83,7 @@ function toItem(m: KiryuuManga): ScraperItem {
     thumbnailUrl: m.metadata?.meta?.thumbnail ?? "",
     directHdUrl: m.metadata?.meta?.thumbnail,
     postUrl: m.link,
-    isNsfw: tax.some((t) => t.taxonomy === "genre" && ADULT_GENRES.has(t.slug)),
+    isNsfw: isAdult(m),
     info:
       [facts, score ? `⭐ ${score}` : ""].filter(Boolean).map(htmlEscape).join(" · ") +
       (genres ? `\n🏷️ ${htmlEscape(genres)}` : "") +
@@ -106,8 +119,9 @@ const reader = createMangaReader({
       .sort((a, b) => (parseFloat(a.number) || 0) - (parseFloat(b.number) || 0));
 
     const item = manga ? toItem(manga) : undefined;
-    const feed = { title: item?.title ?? `Komik #${mangaId}`, info: item?.info, chapters };
-    feedCache.set(mangaId, feed);
+    const feed = { title: item?.title ?? `Komik #${mangaId}`, info: item?.info, chapters, blocked: manga ? isBlocked(manga) : false };
+    // Tanpa data komik, genre-nya belum terperiksa: jangan disimpan, supaya permintaan berikutnya memeriksa ulang
+    if (manga) feedCache.set(mangaId, feed);
     return feed;
   },
 
@@ -116,7 +130,14 @@ const reader = createMangaReader({
     if (cached) return cached;
 
     const ch = await api<{ content?: string; number?: string; parent_id?: string | number }>(`/kiru/v1/chapter?id=${chapterId}`);
-    const urls = [...(ch.content ?? "").matchAll(/<img[^>]+src="(https:\/\/[^"]+)"/g)].map((m) => m[1]);
+    // Penulisan tag gambar di situs tidak seragam (chapter lama memakai kutip tunggal, sebagian memakai
+    // data-src), jadi isinya dibaca sebagai HTML, bukan dicocokkan dengan pola teks
+    const $ = cheerio.load(ch.content ?? "");
+    const found = $("img")
+      .map((_, el) => ($(el).attr("data-src") || $(el).attr("src") || "").trim())
+      .get()
+      .filter((src) => src.startsWith("https://"));
+    const urls = [...new Set(found)];
     if (urls.length === 0) return null;
 
     const pages = { urls, mangaId: ch.parent_id ? String(ch.parent_id) : undefined, number: String(ch.number ?? "?") };
@@ -153,7 +174,8 @@ const kiryuuConfig: DefineScraperConfig = {
     "Tanpa kata kunci: komik yang baru diperbarui.",
     "Posisi baca terakhir tiap komik diingat: buka daftar chapternya lalu tekan <b>Lanjut</b>.",
     "Komik dengan banyak chapter: lompat dengan <b>⏪ 5</b> / <b>5 ⏩</b>, atau tekan <b>Cari chapter lewat inline</b> lalu ketik nomornya.",
-    "Halaman webtoon yang sangat panjang dikirim sebagai berkas; ketuk untuk membukanya.",
+    "Tombol <b>Mode</b> di daftar chapter: baca <b>per halaman</b>, atau <b>⚡ Telegraph</b> (satu chapter penuh dalam satu halaman, tinggal gulir).",
+    "Webtoon/manhwa paling nyaman di mode Telegraph: gambar yang sangat panjang dipotong otomatis. Di mode per halaman, gambar seperti itu dikirim sebagai berkas.",
   ],
 
   itemKeyboard: (item, query) =>
@@ -195,7 +217,7 @@ const kiryuuConfig: DefineScraperConfig = {
       throw err;
     }
 
-    return { items: list.map(toItem), hasNextPage: list.length === PAGE_SIZE };
+    return { items: list.filter((m) => !isBlocked(m)).map(toItem), hasNextPage: list.length === PAGE_SIZE };
   },
 
   async getMetadata(postId) {

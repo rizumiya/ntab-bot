@@ -93,6 +93,10 @@ Tiap album ditutup dengan perintah lanjutan yang tinggal disalin, mis. `/wh suns
 | 💾 Bookmark | Simpan ke `/bookmarks` |
 | 🔗 Sumber | Buka halaman asli |
 | 📖 Baca | Buka daftar chapter. Posisi terakhir diingat: tekan **Lanjut** untuk meneruskan |
+| 🖼️ / ⚡ Mode | Di daftar chapter: ganti cara baca antara **per halaman** dan **Telegraph** |
+| ⚡ Telegraph | Satu chapter penuh sebagai satu halaman Instant View, tinggal gulir |
+
+**Mode Telegraph.** Halaman dibuat sekali per chapter lalu dipakai ulang oleh semua pengguna (alamatnya disimpan di database selama 30 hari). Gambar webtoon/manhwa yang sangat panjang dipotong otomatis menjadi potongan seukuran layar. Server bot tidak mengunduh gambarnya: halaman Telegraph hanya memuat tautan ke server gambar Kiryuu, dan pemotongan dikerjakan CDN publik `wsrv.nl` saat halaman dibuka.
 
 Panduan lengkap per fitur tersedia di dalam bot: **/help**.
 
@@ -124,6 +128,18 @@ Setiap hasil menampilkan tag dari situs sumbernya. Yang bisa diatur per akun:
 | `/exclude yaoi, (male, solo)` | ber-tag `yaoi`, atau ber-tag `male` dan `solo` sekaligus |
 
 Perintah ini mengganti seluruh rumus lama. `/exclude` tanpa isi menampilkan rumus yang sedang berlaku.
+
+### Konten anak di bawah umur
+
+Diblokir oleh bot sendiri: berlaku untuk semua pengguna (termasuk VIP dan owner) dan tidak bisa dimatikan lewat pengaturan.
+
+| Yang diblokir | Kapan |
+|---|---|
+| Tag seksualisasi anak: `loli`, `shota`, `lolicon`, `shotacon`, `toddlercon`, padanan Jepangnya di Pixiv (`ロリ`, `ショタ`, `幼女`, ...) | Selalu, apa pun ratingnya. Juga ditolak sebagai kata kunci |
+| Tag anak yang netral: `child`, `young`, `toddler`, `teen`, `aged_down`, ... | Hanya bila kirimannya berlabel dewasa |
+| Komik Kiryuu bergenre Loli, Lolicon, Shotacon | Selalu: tidak muncul di pencarian dan tidak bisa dibaca |
+
+Daftar tagnya ada di [`src/core/tools/tags.ts`](src/core/tools/tags.ts). Penyaringan bergantung pada tag dari situs sumber, jadi kiriman yang tidak diberi tag oleh situsnya tidak terdeteksi (Wallhaven tidak menyediakan tag di hasil pencarian).
 
 ### Perintah grup
 
@@ -208,6 +224,7 @@ Semua pengaturan ada di `.env` dan dibaca di satu tempat: [`src/core/config.ts`]
 | `PIXIV_PHPSESSID` | kosong | Cookie sesi akun Pixiv. Tanpa ini Pixiv tetap jalan, tetapi karya berlabel dewasa nyaris tidak muncul |
 | `SAUCENAO_API_KEY` | kosong | Kunci SauceNAO. Tanpa ini `/sauce` hanya mengenali tangkapan layar anime |
 | `KIRYUU_URL` | `https://v7.kiryuu.to` | Alamat Kiryuu. Ubah bila domainnya berganti |
+| `TELEGRAPH_TOKEN` | kosong | Token akun Telegraph untuk mode baca Telegraph. Kosong = bot membuat akun sendiri saat pertama dipakai dan menyimpan tokennya di database |
 | `GELBOORU_USER_ID`, `GELBOORU_API_KEY` | kosong | API Gelbooru: lebih cepat, plus GIF dan video. Tanpa ini dipakai pembacaan HTML |
 | `MAX_UPDATE_CONCURRENCY` | `8` | Update Telegram yang diproses bersamaan |
 | `MAX_ALBUM_JOBS` | `2` | Album yang diunduh bersamaan |
@@ -319,6 +336,8 @@ src/
 │   │   ├── http.ts          fetch dengan batas waktu/ukuran, unduh ke disk, folder sementara
 │   │   ├── limit.ts         Semaphore, Cooldown, mapLimit
 │   │   ├── cache.ts         TtlCache
+│   │   ├── imageSize.ts     Ukuran gambar dari header berkas, pemotong gambar memanjang
+│   │   ├── telegraph.ts     Terbitkan deretan gambar sebagai halaman Telegraph
 │   │   ├── media.ts         Kirim album, unduh berkas dari Telegram
 │   │   ├── ui.ts            show, reply, toast, progress, addPager, cb
 │   │   └── text.ts          htmlEscape, format tanggal/ukuran, isOwner
@@ -387,6 +406,9 @@ Pada scraper, rating mengikuti aturan situs sumber, bukan satu standar universal
 | `core/tools/media` | `sendAlbum`, `albumJobs`, `downloadTelegramFile` | Album dengan cache `file_id`; unduh berkas kiriman pengguna |
 | `core/tools/limit` | `Semaphore`, `Cooldown`, `mapLimit` | Batasi pekerjaan berat dan spam |
 | `core/tools/cache` | `TtlCache` | Cache memori berbatas waktu dan jumlah |
+| `core/tools/tags` | `isMinorContent`, `isMinorQuery`, `exclusionFilter` | Blokir bawaan konten anak di bawah umur; rumus `/exclude` |
+| `core/tools/imageSize` | `probeImageSize`, `sliceTallImage` | Ukuran gambar dari 64 KB pertama; pecah gambar memanjang jadi URL potongan |
+| `core/tools/telegraph` | `publishTelegraphAlbum` | Deretan URL gambar menjadi halaman Telegraph (otomatis dipecah bila terlalu panjang) |
 | `core/tools/text` | `htmlEscape`, `truncate`, `formatDate`, `formatBytes`, `isOwner` | Teks aman dan format |
 | `core/engine/gate` | `nsfwAllowed`, `isGroupAdmin`, `moduleStatus` | Keputusan izin |
 | `core/engine/registry` | `registry` | Daftar semua modul |

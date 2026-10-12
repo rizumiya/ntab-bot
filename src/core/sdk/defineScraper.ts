@@ -5,7 +5,7 @@ import { BotModule, BotContext, CommandDef, CallbackDef, InlineResultResponse } 
 import { nsfwAllowed } from "../engine/gate";
 import { PLANS } from "../plans";
 import { htmlEscape } from "../tools/text";
-import { exclusionFilter } from "../tools/tags";
+import { exclusionFilter, isMinorContent, isMinorQuery } from "../tools/tags";
 import { downloadToFile, withTempDir, TooLargeError } from "../tools/http";
 import { Cooldown } from "../tools/limit";
 import { albumJobs, sendAlbum, TG_UPLOAD_MAX } from "../tools/media";
@@ -92,6 +92,11 @@ function tagLine(tags: string[] | undefined): string {
   return `🏷️ ${shown}${more}\n`;
 }
 
+const MINOR_QUERY_NOTE = "Bot ini tidak menampilkan konten anak di bawah umur. Kata kunci itu diblokir.";
+
+/** Pemblokiran bawaan (bukan pilihan pengguna): item bertag anak di bawah umur tidak pernah ditampilkan. */
+const isBlocked = (item: ScraperItem) => isMinorContent(item.tags, Boolean(item.isNsfw));
+
 /** Pemeriksa "apakah gambar ini disembunyikan pengguna" menurut rumus /exclude miliknya. */
 function userExclusions(ctx: BotContext): (tags: string[] | undefined) => boolean {
   return exclusionFilter(ctx.db.getUserSetting(ctx.user.id, "excluded_tags", ""));
@@ -148,6 +153,21 @@ export function defineScraper(config: DefineScraperConfig): BotModule {
         const page = parseInt(pageText, 10) || 1;
         const nsfw = nsfwAllowed(ctx);
 
+        if (isMinorQuery(query)) {
+          return {
+            items: [
+              {
+                type: "article",
+                id: `${ns}_blocked`,
+                title: "⛔ Kata kunci diblokir",
+                description: MINOR_QUERY_NOTE,
+                input_message_content: { message_text: `⛔ ${MINOR_QUERY_NOTE}` },
+              },
+            ],
+            cacheTime: 300,
+          };
+        }
+
         let res: ScraperSearchResult;
         try {
           res = await config.search(query, page, { nsfw, cursor });
@@ -168,7 +188,7 @@ export function defineScraper(config: DefineScraperConfig): BotModule {
           // Telegram menolak seluruh jawaban bila berisi lebih dari 50 hasil
           if (items.length >= MAX_INLINE_RESULTS) break;
           if ((item.isNsfw && !nsfw) || seen.has(item.id)) continue;
-          if (isExcluded(item.tags)) continue;
+          if (isBlocked(item) || isExcluded(item.tags)) continue;
           seen.add(item.id);
 
           const full =
@@ -372,6 +392,11 @@ export async function sendScraperAlbum(config: DefineScraperConfig, rawQuery: st
     .replace(/\s+/g, " ")
     .trim();
 
+  if (isMinorQuery(query)) {
+    await reply(ctx, `⛔ ${MINOR_QUERY_NOTE}`);
+    return;
+  }
+
   const waitSeconds = albumCooldown.hit(ctx.user.id);
   if (waitSeconds > 0) {
     await reply(ctx, `⏳ Tunggu ${waitSeconds} detik sebelum meminta album lagi.`);
@@ -399,7 +424,7 @@ export async function sendScraperAlbum(config: DefineScraperConfig, rawQuery: st
             .filter((item) => nsfw || !item.isNsfw)
             // Album hanya berisi foto; animasi dan video tersedia lewat mode inline
             .filter((item) => (item.media ?? "photo") === "photo")
-            .filter((item) => !isExcluded(item.tags))
+            .filter((item) => !isBlocked(item) && !isExcluded(item.tags))
         );
         if (!found.hasNextPage) break;
         cursor = found.nextCursor;

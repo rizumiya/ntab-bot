@@ -4,6 +4,7 @@ import { nsfwAllowed } from "../../core/engine/gate";
 import { config } from "../../core/config";
 import { proxied } from "../../core/network/proxy";
 import { fetchJson } from "../../core/tools/http";
+import { isMinorContent } from "../../core/tools/tags";
 import { htmlEscape } from "../../core/tools/text";
 import { TtlCache } from "../../core/tools/cache";
 import { albumJobs, sendAlbum } from "../../core/tools/media";
@@ -292,6 +293,7 @@ const pixivConfig: DefineScraperConfig = {
           const work = await getWork(illustId).catch(() => null);
 
           if (!work) return wait.fail(`❌ Karya <code>#${illustId}</code> tidak ditemukan di Pixiv.`);
+          if (isMinorContent(work.tags, work.isNsfw)) return wait.fail("⛔ Karya ini tidak tersedia di bot ini.");
           if (work.isNsfw && !nsfwAllowed(ctx)) {
             return wait.fail("🔞 Karya ini berlabel dewasa. Nyalakan NSFW di /settings dan buka lewat chat pribadi.");
           }

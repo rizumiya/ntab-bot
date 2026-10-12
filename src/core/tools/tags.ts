@@ -85,3 +85,73 @@ export function exclusionFilter(formula: string): (tags: string[] | undefined) =
     return rules.some((rule) => rule.every((tag) => present.has(tag)));
   };
 }
+
+// ============================================================================
+// KONTEN ANAK DI BAWAH UMUR
+// ============================================================================
+/**
+ * Pemblokiran bawaan bot: berlaku untuk semua pengguna (termasuk owner) dan tidak bisa dimatikan
+ * lewat pengaturan apa pun. Dua tingkat:
+ *   - SELALU: tag yang menandai seksualisasi anak (loli, shota, ...). Diblokir apa pun ratingnya,
+ *     dan ditolak juga sebagai kata kunci pencarian.
+ *   - BILA DEWASA: tag anak yang netral (child, young, ...). Gambarnya tetap boleh selama berlabel aman,
+ *     tetapi diblokir begitu kirimannya berlabel dewasa.
+ * Tag dicocokkan per kata (dipisah "_", "-", spasi), jadi "oppai_loli" ikut kena
+ * sedangkan "gothic_lolita" (gaya busana) tidak.
+ */
+const ALWAYS_WORDS = new Set([
+  "loli", "lolis", "lolicon", "shota", "shotas", "shotacon", "toddlercon", "pedo", "pedophile", "pedophilia",
+  "jailbait", "underage", "preteen", "prepubescent",
+]);
+const ADULT_ONLY_WORDS = new Set([
+  "child", "children", "kids", "kodomo", "young", "cub", "toddler", "baby", "infant",
+  "teen", "teens", "teenage", "teenager",
+  "kindergarten", "kindergartener", "elementary", "preschooler", "randoseru",
+]);
+const ADULT_ONLY_TAGS = new Set([
+  "aged_down", "age_regression", "little_girl", "little_boy", "young_girl", "young_boy", "small_girl", "small_boy",
+  "elementary_school_student", "elementary_schooler", "grade_schooler", "middle_schooler", "middle_school_student",
+  "junior_high_school_student", "kindergarten_uniform", "school_swimsuit_child",
+]);
+
+// Tag Jepang (Pixiv) tidak dipisah per kata, jadi dicocokkan sebagai potongan teks.
+// Kata serapan yang kebetulan memuat "ロリ" dibuang dulu: カロリー (kalori), ロリータ/ゴスロリ/甘ロリ (gaya busana).
+const JP_HARMLESS = /カロリ|ロリータ|ロリィタ|ゴスロリ|甘ロリ|姫ロリ|和ロリ|クラロリ/g;
+const JP_ALWAYS = /ロリ|ショタ|ペド|ろり|しょた|幼女|幼児|幼稚園|園児|女児|男児|小学生|js\d|メスガキ|つるぺた|ランドセル/;
+const JP_ADULT_ONLY = /中学生|jc\d|子供|子ども|こども|未成年/;
+
+function minorLevel(rawTag: string): "always" | "adult" | null {
+  const tag = normalize(rawTag);
+  if (!tag) return null;
+
+  const japanese = tag.replace(JP_HARMLESS, "");
+  if (JP_ALWAYS.test(japanese)) return "always";
+
+  const words = tag.split(/[_\-\s:()]+/).filter(Boolean);
+  if (words.some((w) => ALWAYS_WORDS.has(w))) return "always";
+  if (ADULT_ONLY_TAGS.has(tag) || words.some((w) => ADULT_ONLY_WORDS.has(w)) || JP_ADULT_ONLY.test(japanese)) return "adult";
+  return null;
+}
+
+/**
+ * Apakah item bertag ini harus disembunyikan karena memuat anak di bawah umur.
+ * `isAdult` = kiriman berlabel dewasa (rating questionable/explicit, atau situsnya seluruhnya dewasa).
+ */
+export function isMinorContent(tags: string[] | undefined, isAdult: boolean): boolean {
+  if (!tags?.length) return false;
+  return tags.some((tag) => {
+    const level = minorLevel(tag);
+    return level === "always" || (level === "adult" && isAdult);
+  });
+}
+
+/**
+ * Apakah kata kunci pencarian meminta konten yang selalu diblokir.
+ * Tag berawalan "-" berarti pengecualian (menyingkirkan), jadi tidak dihitung.
+ */
+export function isMinorQuery(query: string): boolean {
+  return query
+    .split(/[\s,]+/)
+    .filter((word) => word && !word.startsWith("-"))
+    .some((word) => minorLevel(word.replace(/^[~+]/, "")) === "always");
+}

@@ -78,13 +78,13 @@ async function main() {
   const privateChat = (u: typeof USER) => ({ id: u.id, type: "private" as const, first_name: u.first_name });
   const group = { id: -100, type: "supergroup" as const, title: "Grup <Uji>" };
 
-  async function step(name: string, update: Record<string, unknown>, expect: (c: typeof calls) => string | true) {
+  async function step(name: string, update: Record<string, unknown>, expect: (c: typeof calls) => string | true | Promise<string | true>) {
     calls.length = 0;
     rejected.length = 0;
     const before = errors.length;
     await bot.handleUpdate({ update_id: updateId++, ...update } as any);
     const verdict =
-      errors.length > before ? errors[errors.length - 1] : rejected.length > 0 ? `ditolak Telegram: ${rejected[0]}` : expect(calls);
+      errors.length > before ? errors[errors.length - 1] : rejected.length > 0 ? `ditolak Telegram: ${rejected[0]}` : await expect(calls);
     if (verdict === true) console.log(`  ok   ${name}`);
     else {
       failed++;
@@ -263,6 +263,100 @@ async function main() {
     JSON.stringify(parseExclusions(repo.getUserSetting(2, "excluded_tags", ""))) === '[["yaoi"],["male","solo"]]' || repo.getUserSetting(2, "excluded_tags", "")
   );
   repo.setUserSetting(2, "excluded_tags", "");
+  // Pemblokiran bawaan konten anak di bawah umur
+  const { isMinorContent, isMinorQuery } = await import("../src/core/tools/tags");
+  const minorCases: Array<[string[], boolean, boolean]> = [
+    // [tag, kiriman berlabel dewasa, harus diblokir]
+    [["1girl", "loli"], false, true],
+    [["oppai_loli"], true, true],
+    [["Shotacon"], false, true],
+    [["onee-shota"], true, true],
+    [["ロリ", "オリジナル"], true, true],
+    [["R-18", "幼女"], true, true],
+    [["gothic_lolita", "1girl"], true, false],
+    [["ゴスロリ"], true, false],
+    [["カロリーメイト"], true, false],
+    [["child", "smile"], false, false],
+    [["child", "smile"], true, true],
+    [["young", "wolf"], true, true],
+    [["lion_cub"], false, false],
+    [["1girl", "solo"], true, false],
+    [[], true, false],
+  ];
+  await step("konten anak: tag loli/shota selalu diblokir, tag anak netral hanya bila dewasa", say(USER, "abaikan"), () => {
+    const wrong = minorCases.filter(([tags, adult, expected]) => isMinorContent(tags, adult) !== expected);
+    return wrong.length === 0 || `salah untuk: ${wrong.map(([tags, adult]) => `${tags.join("+")}${adult ? " (dewasa)" : ""}`).join(" | ")}`;
+  });
+  await step("konten anak: kata kunci diblokir, kecuali sebagai pengecualian (-tag)", say(USER, "abaikan"), () => {
+    const blocked = ["loli", "1girl shota", "hatsune_miku lolicon", "ロリ"].filter((q) => !isMinorQuery(q));
+    const allowed = ["hatsune_miku -loli", "gothic_lolita", "child", "solo leveling", ""].filter((q) => isMinorQuery(q));
+    return blocked.length + allowed.length === 0 || `lolos: ${blocked.join(" | ")} ; salah blokir: ${allowed.join(" | ")}`;
+  });
+  await step("konten anak: perintah album menolak kata kunci", say(USER, "/sb loli"), (c) => sent(c, "sendMessage", "diblokir"));
+  await step("konten anak: inline menolak kata kunci", inline(USER, ".sb 1girl loli"), (c) => {
+    const results = c.find((x) => x.method === "answerInlineQuery")?.payload.results ?? [];
+    return results.length === 1 && results[0].id === "sb_blocked" ? true : `hasil: ${results.map((r: any) => r.id).join(",")}`;
+  });
+
+  // Telegraph: API-nya ditiru, jadi uji ini tidak pernah menerbitkan halaman sungguhan
+  const telegraphCalls: Array<{ method: string; body: any }> = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: any, init?: any) => {
+    const url = String(typeof input === "string" || input instanceof URL ? input : input.url);
+    if (!url.startsWith("https://api.telegra.ph/")) return realFetch(input, init);
+    const method = url.split("/").pop()!;
+    const body = JSON.parse(String(init?.body ?? "{}"));
+    telegraphCalls.push({ method, body });
+    const result = method === "createAccount" ? { access_token: "tiruan" } : { url: `https://telegra.ph/uji-${telegraphCalls.length}` };
+    return new Response(JSON.stringify({ ok: true, result }), { headers: { "Content-Type": "application/json" } });
+  }) as typeof fetch;
+
+  const { parseImageSize, sliceTallImage } = await import("../src/core/tools/imageSize");
+  const { publishTelegraphAlbum } = await import("../src/core/tools/telegraph");
+  await step("ukuran gambar terbaca dari header PNG dan JPEG", say(USER, "abaikan"), () => {
+    const png = Buffer.alloc(40);
+    png.writeUInt32BE(0x89504e47, 0);
+    png.writeUInt32BE(720, 16);
+    png.writeUInt32BE(8631, 20);
+    // JPEG: SOI, segmen APP0 (16 byte), lalu SOF0 berisi tinggi 1188 dan lebar 850
+    const jpeg = Buffer.concat([
+      Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]),
+      Buffer.alloc(14),
+      Buffer.from([0xff, 0xc0, 0x00, 0x11, 0x08, 0x04, 0xa4, 0x03, 0x52]),
+      Buffer.alloc(20),
+    ]);
+    const got = JSON.stringify([parseImageSize(png), parseImageSize(jpeg), parseImageSize(Buffer.alloc(40))]);
+    return got === '[{"width":720,"height":8631},{"width":850,"height":1188},null]' || got;
+  });
+  await step("gambar memanjang dipotong, gambar biasa dibiarkan", say(USER, "abaikan"), () => {
+    const normal = sliceTallImage("https://cdn.example/1.jpg", { width: 850, height: 1188 });
+    const unknown = sliceTallImage("https://cdn.example/1.jpg", null);
+    const tall = sliceTallImage("https://cdn.example/2.jpg", { width: 720, height: 8631 });
+    if (normal.length !== 1 || normal[0] !== "https://cdn.example/1.jpg" || unknown.length !== 1) return "gambar biasa ikut dipotong";
+    const rows = tall.map((u) => [Number(u.match(/cy=(\d+)/)?.[1]), Number(u.match(/ch=(\d+)/)?.[1])]);
+    const covered = rows.every(([top], i) => top === (i === 0 ? 0 : rows[i - 1][0] + rows[i - 1][1]));
+    const total = rows.reduce((sum, [, height]) => sum + height, 0);
+    return (tall.length === 8 && covered && total === 8631) || `potongan: ${JSON.stringify(rows)}`;
+  });
+  await step("Telegraph: akun dibuat sekali, isi panjang dipecah jadi bagian bersambung", say(USER, "abaikan"), async () => {
+    const images = Array.from({ length: 500 }, (_, i) => `https://wsrv.nl/?url=${"x".repeat(150)}${i}`);
+    const first = await publishTelegraphAlbum({ title: "Uji - Chapter 1", authorName: "@ntab_test_bot", images });
+    await publishTelegraphAlbum({ title: "Uji - Chapter 2", authorName: "@ntab_test_bot", images: images.slice(0, 3) });
+
+    const accounts = telegraphCalls.filter((t) => t.method === "createAccount").length;
+    const pages = telegraphCalls.filter((t) => t.method === "createPage");
+    const parts = pages.filter((t) => String(t.body.title).startsWith("Uji - Chapter 1"));
+    if (accounts !== 1) return `createAccount dipanggil ${accounts} kali`;
+    if (parts.length < 2) return `hanya ${parts.length} bagian`;
+    if (parts.some((t) => Buffer.byteLength(JSON.stringify(t.body.content)) > 64 * 1024)) return "ada bagian di atas 64 KB";
+    const count = parts.reduce((sum, t) => sum + t.body.content.filter((n: any) => n.tag === "img").length, 0);
+    if (count !== 500) return `${count} gambar dari 500`;
+    // Bagian pertama dibuat paling akhir dan menaut ke bagian kedua
+    const head = parts[parts.length - 1];
+    if (!String(head.body.title).endsWith(`(1/${parts.length})`) || !JSON.stringify(head.body.content).includes("Lanjut ke bagian 2")) return "bagian tidak bersambung";
+    return first === `https://telegra.ph/uji-${telegraphCalls.indexOf(head) + 1}` || `URL yang dikembalikan bukan bagian pertama: ${first}`;
+  });
+
   await step("/kr tanpa kata kunci", say(USER, "/kr"), (c) => sent(c, "sendMessage", "Kiryuu"));
   await step("halaman Fitur berkelompok", press(USER, "m:set:mods"), (c) => sent(c, "editMessageText", "Baca komik"));
 
@@ -307,6 +401,53 @@ async function main() {
     await step("halaman 3", press(USER, `m:kr:p:${chapterId}:2`), (c) => sent(c, "sendPhoto", "hal. 3/"));
     await step("lanjut baca diingat", press(USER, `m:kr:read:${mangaId}`), (c) => sent(c, "editMessageText", "hal. 3"));
     await step("bookmark komik", press(USER, `m:kr:fav:${mangaId}`), (c) => sent(c, "answerCallbackQuery"));
+    // Laporan pengguna: chapter lama komik ini menulis <img src='...'> dengan kutip tunggal dan sempat tidak terbaca
+    await step("chapter bertag gambar kutip tunggal terbuka", press(USER, "m:kr:p:600741:0"), (c) => sent(c, "sendPhoto", "hal. 1/48"));
+
+    console.log("\nTelegraph (API Telegraph ditiru)");
+    const pagesMade = () => telegraphCalls.filter((t) => t.method === "createPage").length;
+    await step("tombol Mode mengalihkan daftar chapter ke Telegraph", press(USER, "m:kr:mode:600709:1"), (c) =>
+      sent(c, "editMessageText", "m:kr:tg:600741") === true && sent(c, "editMessageText", "Mode: Telegraph")
+    );
+    let before = pagesMade();
+    await step("chapter manga: satu halaman Telegraph, gambar tidak dipotong", press(USER, "m:kr:tg:600741"), (c) => {
+      const page = telegraphCalls[telegraphCalls.length - 1];
+      if (pagesMade() !== before + 1) return `createPage dipanggil ${pagesMade() - before} kali`;
+      if (!String(page.body.title).endsWith("Igokochi ga Warukunai - Chapter 1")) return `judul: ${page.body.title}`;
+      if (page.body.content.length !== 48 || JSON.stringify(page.body.content).includes("wsrv.nl")) return `isi: ${page.body.content.length} gambar`;
+      return sent(c, "editMessageText", "telegra.ph/uji-") === true && sent(c, "editMessageText", "m:kr:tg:600742");
+    });
+    before = pagesMade();
+    await step("pengguna lain, chapter sama: memakai halaman yang sudah ada", press(OWNER, "m:kr:tg:600741"), (c) =>
+      pagesMade() === before ? sent(c, "editMessageText", "telegra.ph/uji-") : "halaman dibuat ulang"
+    );
+    await new Promise((resolve) => setTimeout(resolve, 3200)); // jeda anti-spam pembuatan halaman per pengguna
+    await step("chapter manhwa: gambar memanjang dipotong", press(USER, "m:kr:tg:817012"), (c) => {
+      const content = JSON.stringify(telegraphCalls[telegraphCalls.length - 1].body.content);
+      const slices = content.match(/wsrv\.nl/g)?.length ?? 0;
+      return slices > 20 ? sent(c, "editMessageText", "gambar") : `hanya ${slices} potongan`;
+    });
+    await step("kembali ke mode per halaman", press(USER, "m:kr:mode:600709:1"), (c) => sent(c, "editMessageText", "m:kr:p:600741:0"));
+
+    console.log("\nKonten anak di bawah umur (butuh internet)");
+    // Komik uji: #318193, bergenre Lolicon di Kiryuu
+    await step("genre lolicon ditolak sebagai kata kunci", inline(USER, ".kr genre:lolicon"), (c) => sent(c, "answerInlineQuery", "kr_blocked"));
+    await step("komik lolicon tidak muncul saat dicari lewat judul", inline(USER, ".kr Kiotsukenayo"), (c) => {
+      const results = c.find((x) => x.method === "answerInlineQuery")?.payload.results ?? [];
+      return results.every((r: any) => r.id !== "kr_318193") || "komik lolos";
+    });
+    await step("komik lolicon: daftar chapter ditolak", press(USER, "m:kr:read:318193"), (c) => sent(c, "editMessageText", "tidak tersedia"));
+    const blockedList = (await (await realFetch("https://v7.kiryuu.to/wp-admin/admin-ajax.php?manga_id=318193&action=get_chapters")).json()) as {
+      data?: Array<{ url: string }>;
+    };
+    const blockedChapter = blockedList.data?.[0]?.url.match(/\.(\d+)\/?$/)?.[1] ?? "";
+    before = pagesMade();
+    await step("komik lolicon: halaman chapter ditolak", press(USER, `m:kr:p:${blockedChapter}:0`), (c) =>
+      blockedChapter ? sent(c, "answerCallbackQuery", "tidak tersedia") === true && (!c.some((x) => x.method === "sendPhoto") || "gambar terkirim") : "chapter uji tidak ditemukan"
+    );
+    await step("komik lolicon: Telegraph ditolak", press(USER, `m:kr:tg:${blockedChapter}`), (c) =>
+      pagesMade() === before ? sent(c, "answerCallbackQuery", "tidak tersedia") : "halaman Telegraph dibuat"
+    );
 
     console.log("\nPixiv & Gelbooru (butuh internet)");
     const inlineResults = (c: typeof calls) => (c.find((x) => x.method === "answerInlineQuery")?.payload.results ?? []) as any[];

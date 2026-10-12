@@ -72,6 +72,30 @@ export async function fetchText(url: string, opts: RequestOptions = {}): Promise
   return res.text();
 }
 
+/**
+ * Ambil hanya `bytes` pertama sebuah berkas (mis. untuk membaca header gambar).
+ * Memakai Range; bila server mengabaikannya, pembacaan tetap dihentikan setelah `bytes`.
+ */
+export async function fetchHead(url: string, bytes: number, opts: RequestOptions = {}): Promise<Buffer> {
+  const res = await request(url, { ...opts, headers: { Range: `bytes=0-${bytes - 1}`, ...opts.headers } });
+  if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+
+  const chunks: Buffer[] = [];
+  let received = 0;
+  const reader = res.body.getReader();
+  try {
+    while (received < bytes) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(Buffer.from(value));
+      received += value.length;
+    }
+  } finally {
+    await reader.cancel().catch(() => {});
+  }
+  return Buffer.concat(chunks).subarray(0, bytes);
+}
+
 export class TooLargeError extends Error {
   constructor(public readonly maxBytes: number) {
     super(`Ukuran berkas melebihi batas ${(maxBytes / 1024 / 1024).toFixed(0)} MB`);

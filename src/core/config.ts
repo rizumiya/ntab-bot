@@ -51,6 +51,8 @@ export const config = {
   /** Alamat situs Kiryuu. Domainnya sesekali berganti (v7, v8, ...), jadi bisa diubah tanpa menyentuh kode. */
   kiryuuUrl: str("KIRYUU_URL", "https://v7.kiryuu.to").replace(/\/+$/, ""),
   saucenaoKey: str("SAUCENAO_API_KEY"),
+  /** Token akun Telegraph (opsional). Bila kosong, bot membuat akun sendiri dan menyimpan tokennya di database. */
+  telegraphToken: str("TELEGRAPH_TOKEN"),
   /** Cookie PHPSESSID akun Pixiv. Dengan ini pencarian ikut memuat karya berlabel dewasa. */
   pixivSession: str("PIXIV_PHPSESSID"),
 
