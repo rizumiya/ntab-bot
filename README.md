@@ -29,7 +29,7 @@ Bot Telegram modular untuk mencari gambar anime dan wallpaper dari banyak sumber
 | 📷 Realbooru | `/rp` | `.rp` | VIP | Foto cosplay dan model (seluruhnya konten dewasa) |
 | 🎨 Pixiv | `/px` | `.px` | VIP | Fanart per tag, paket per ID karya, atau karya per ID kreator |
 | 📚 Kiryuu | `/kr` | `.kr` | Gratis | Komik berbahasa Indonesia, baca di Telegram |
-| 🎬 Media Tools | `/mp3`, `/mp4`, `/gif`, `/ugoira` | - | Gratis | Ambil audio, kompres video MP4 atau playlist HTTPS `.m3u8`, ubah video ke GIF, animasi Pixiv ke video |
+| 🎬 Media Tools | `/mp3`, `/gif`, `/ugoira` | - | Gratis | Ambil audio dari video, ubah video ke GIF, animasi Pixiv ke video |
 | 🔍 Cari Sumber Gambar | `/sauce` | - | Gratis | Judul anime dan episode, atau kreator sebuah fanart |
 | 👥 Moderasi Grup | `/warn`, `/mute`, `/ban`, `/setwelcome`, ... | - | Gratis | Peringatan bertingkat, bisukan, sambutan, aturan |
 | 🔗 Stiker & Tautan | `/stickers`, `/linklog`, `/links` | `.st` | Gratis | Indeks paket stiker, arsip tautan grup |
@@ -61,11 +61,7 @@ Harga dan durasi VIP diatur di [`src/core/plans.ts`](src/core/plans.ts).
 /kr solo leveling   cari komik, lalu tekan "Baca"
 /px 99040957        semua halaman sebuah karya Pixiv
 /sauce              (sambil membalas foto) cari judul anime
-/mp4                 (sambil membalas video) kompres video menjadi MP4
-/mp4 https://cdn.example/video.m3u8  unduh HLS VOD HTTPS, lalu kompres
 ```
-
-`/mp4` untuk tautan menerima playlist HLS VOD HTTPS, bukan siaran live. Unduhan dibatasi 200 MB dan 500 segmen; playlist dengan audio terpisah atau byte-range belum didukung. Hasil dikirim hanya jika lebih kecil dari sumber dan tidak melebihi 50 MB.
 
 Album bisa digeser dan dibatasi dengan menambahkan parameter di belakang kata kunci:
 
@@ -178,7 +174,7 @@ Di panel admin, **Fitur global** mematikan sebuah fitur bagi semua pengguna, mis
 
 ## Menjalankan di komputer sendiri
 
-Butuh **Node.js 22.13 atau lebih baru** (bot memakai `node:sqlite` bawaan). FFmpeg diperlukan untuk `/mp3`, `/mp4`, `/gif`, dan `/ugoira`.
+Butuh **Node.js 22.13 atau lebih baru** (bot memakai `node:sqlite` bawaan). FFmpeg diperlukan untuk `/mp3`, `/gif`, dan `/ugoira`.
 
 ```bash
 npm install
@@ -293,7 +289,7 @@ Diatur di [`compose.yml`](compose.yml), supaya bot tidak mengganggu layanan lain
 
 Terukur saat diam: sekitar 40 MB memori dan CPU mendekati nol. Memori naik sementara saat mengirim album atau mengonversi video.
 
-Image Docker sudah menyertakan FFmpeg untuk `/mp3`, `/mp4`, `/gif`, dan `/ugoira`.
+Image Docker sudah menyertakan FFmpeg untuk `/mp3`, `/gif`, dan `/ugoira`.
 
 ---
 
@@ -439,7 +435,7 @@ Pada scraper, rating mengikuti aturan situs sumber, bukan satu standar universal
 | Tombol **File HD** memunculkan "tekan Start dulu" | Pengguna belum pernah membuka chat pribadi dengan bot |
 | Mode inline tidak muncul | Aktifkan *Inline Mode* di @BotFather (`/setinline`) |
 | Bot tidak membaca pesan di grup | Perintah `/...` selalu terbaca. Untuk perintah titik (`.wh`) dan arsip tautan, matikan *Group Privacy* di @BotFather atau jadikan bot admin |
-| `/mp3`, `/mp4`, `/gif` membalas "FFmpeg belum terpasang" | Pastikan image Docker dibangun ulang dengan `docker compose up -d --build` |
+| `/mp3`, `/gif` membalas "FFmpeg belum terpasang" | Pastikan image Docker dibangun ulang dengan `docker compose up -d --build` |
 | Pencarian selalu kosong saat dijalankan lokal | ISP memblokir situs sumber. Setel `ENABLE_CUSTOM_DNS=true` |
 | Thumbnail Gelbooru kosong di inline | Butuh image proxy (lihat Konfigurasi) |
 | `.px` atau `.gb` tidak menampilkan apa pun | Cari `inline gagal` di log. Penyebab umum: situs sumber menolak, atau hasil melanggar batas Telegram |

@@ -96,6 +96,21 @@ export async function fetchHead(url: string, bytes: number, opts: RequestOptions
   return Buffer.concat(chunks).subarray(0, bytes);
 }
 
+/**
+ * Minta sebuah URL lalu buang isinya. Dipakai untuk "memanaskan" CDN: setelah ini,
+ * permintaan berikutnya ke URL yang sama dilayani dari cache CDN, bukan diolah ulang.
+ * Mengembalikan false bila gagal (tidak melempar).
+ */
+export async function warmUrl(url: string, opts: RequestOptions = {}): Promise<boolean> {
+  try {
+    const res = await request(url, { timeoutMs: 30_000, ...opts });
+    await res.arrayBuffer();
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 export class TooLargeError extends Error {
   constructor(public readonly maxBytes: number) {
     super(`Ukuran berkas melebihi batas ${(maxBytes / 1024 / 1024).toFixed(0)} MB`);

@@ -1,7 +1,7 @@
 import * as path from "path";
 import { InlineKeyboard, InputFile } from "grammy";
 import { BotContext, CallbackDef } from "../engine/types";
-import { downloadToFile, withTempDir } from "../tools/http";
+import { downloadToFile, warmUrl, withTempDir } from "../tools/http";
 import { probeImageSize, sliceTallImage } from "../tools/imageSize";
 import { Cooldown, mapLimit, Semaphore } from "../tools/limit";
 import { TG_PHOTO_MAX } from "../tools/media";
@@ -57,6 +57,8 @@ const TELEGRAPH_TTL_MS = 30 * 86_400_000;
 /** Pembuatan halaman Telegraph yang berjalan bersamaan, untuk semua sumber komik. */
 const telegraphJobs = new Semaphore(2);
 const telegraphCooldown = new Cooldown(3000);
+/** Potongan gambar yang diminta bersamaan ke CDN pemotong saat menyiapkan sebuah chapter. */
+const WARM_CONCURRENCY = 6;
 
 /** Halaman Telegraph sebuah chapter, seperti yang disimpan di database. */
 interface TelegraphPage {
@@ -245,6 +247,13 @@ export function createMangaReader(source: ReaderSource) {
     const sizes = await mapLimit(pages.urls, 6, (url) => probeImageSize(url));
     const images = pages.urls.flatMap((url, i) => sliceTallImage(url, sizes[i]));
 
+    // Telegram mengambil SEMUA gambar begitu tautannya dikirim, dan tidak membuat Instant View bila itu
+    // terlalu lama. Potongan yang belum pernah diminta harus dipotong dulu oleh CDN (beberapa detik per
+    // potongan), jadi tiap potongan diminta sekali di sini supaya sudah siap di cache CDN saat Telegram datang.
+    const slices = images.filter((url) => !pages.urls.includes(url));
+    const cold = (await mapLimit(slices, WARM_CONCURRENCY, async (url) => ((await warmUrl(url)) ? null : url))).filter((url) => url !== null);
+    await mapLimit(cold, 2, (url) => warmUrl(url));
+
     // Judul tidak memuat apa pun tentang peminta: halaman ini milik bersama
     const url = await publishTelegraphAlbum({
       title: `${truncate(feed?.title ?? source.siteName, 180)} - Chapter ${pages.number}`,
@@ -291,6 +300,17 @@ export function createMangaReader(source: ReaderSource) {
       }
 
       await toast(ctx, "⏳ Menyiapkan halaman Telegraph, tunggu sebentar...");
+      // Chapter webtoon bisa makan 1-2 menit; pesan teks yang ditekan dijadikan penanda proses
+      const pressed = ctx.callbackQuery?.message;
+      if (ctx.callbackQuery && (!pressed || "text" in pressed)) {
+        await ctx
+          .editMessageText(
+            `⏳ Menyiapkan <b>Ch. ${htmlEscape(pages.number)}</b> di Telegraph...\n` +
+              `Chapter webtoon yang panjang bisa makan 1-2 menit. Cukup sekali: sesudahnya chapter ini langsung terbuka.`,
+            { parse_mode: "HTML" }
+          )
+          .catch(() => {});
+      }
       try {
         page = await job;
         ctx.db.setValue(telegraphKey(chapterId), JSON.stringify(page));

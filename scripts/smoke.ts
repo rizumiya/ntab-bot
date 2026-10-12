@@ -210,7 +210,7 @@ async function main() {
   console.log("\nInline");
   await step("kosong: panduan prefix", inline(USER, ""), (c) => sent(c, "answerInlineQuery", ".wh"));
   await step("media-tools tanpa media", say(USER, "/mp3"), (c) => sent(c, "sendMessage", "Balas"));
-  await step("/mp4 tanpa input memberi panduan", say(USER, "/mp4"), (c) => sent(c, "sendMessage", "Balas"));
+  await step("/mp4 sudah dihapus: tidak dijawab", say(USER, "/mp4"), (c) => c.length === 0 || "seharusnya diam");
   await step("/sauce tanpa foto", say(USER, "/sauce"), (c) => sent(c, "sendMessage", "tangkapan layar"));
   await step("/mg sudah dihapus: tidak dijawab", say(USER, "/mg naruto"), (c) => c.length === 0 || "seharusnya diam");
 
