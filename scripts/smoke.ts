@@ -380,6 +380,12 @@ async function main() {
       return r.length >= 5 && shown.length >= r.length - 2 ? true : `hasil ${r.length}, menampilkan genre: ${shown.length}`;
     });
     await step("genre dua kata + genre lain", inline(USER, ".kr slice of life, comedy"), (c) => titlesOf(c).length >= 5 || `hasil ${titlesOf(c).length}`);
+    await step("judul + genre: semua kata di kanan genre: adalah genre", inline(USER, ".kr academy genre: action fantasy"), (c) => {
+      const r = titlesOf(c);
+      const off = r.filter((x) => !/academy/i.test(x.title + x.input_message_content.message_text));
+      return r.length >= 2 && off.length === 0 ? true : `hasil ${r.length}, tanpa "academy": ${off.map((x) => x.title).join(" | ")}`;
+    });
+    await step("genre: saja, dengan genre dua kata", inline(USER, ".kr genre: school life romance"), (c) => titlesOf(c).length >= 5 || `hasil ${titlesOf(c).length}`);
     await step("kata genre yang juga judul: judul yang cocok di urutan depan", inline(USER, ".kr horror game"), (c) => {
       const r = titlesOf(c);
       return /horror game/i.test(r[0]?.title ?? "") && r.length > 1 ? true : `hasil: ${r.map((x) => x.title).join(" | ")}`;

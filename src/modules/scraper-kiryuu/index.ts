@@ -74,19 +74,26 @@ function isBlocked(m: KiryuuManga): boolean {
 
 /**
  * Baca deretan kata sebagai nama-nama genre, mis. "mystery horror" atau "slice of life, comedy".
- * Nama terpanjang dicoba lebih dulu. Mengembalikan null bila ada kata yang bukan genre:
- * berarti kata kunci itu sebuah judul.
+ * Nama terpanjang dicoba lebih dulu. Kata yang bukan genre: dilewati bila `lenient`,
+ * selain itu hasilnya null (berarti kata kunci itu sebuah judul).
  */
-function genresIn(text: string, genres: Map<string, number>): number[] | null {
-  const words = genreKey(text.replace(/,/g, " ")).split(" ").filter(Boolean);
+function genresIn(text: string, genres: Map<string, number>, lenient = false): number[] | null {
+  const words = genreKey(text.replace(/[,"]/g, " ")).split(" ").filter(Boolean);
   const ids: number[] = [];
   for (let i = 0; i < words.length; ) {
     let length = Math.min(4, words.length - i);
     let id: number | undefined;
-    for (; length > 0 && id === undefined; length--) id = genres.get(words.slice(i, i + length).join(" "));
-    if (id === undefined) return null;
+    for (; length > 0; length--) {
+      id = genres.get(words.slice(i, i + length).join(" "));
+      if (id !== undefined) break;
+    }
+    if (id === undefined) {
+      if (!lenient) return null;
+      i++;
+      continue;
+    }
     ids.push(id);
-    i += length + 1;
+    i += length;
   }
   return [...new Set(ids)];
 }
@@ -193,7 +200,7 @@ const kiryuuConfig: DefineScraperConfig = {
   help: [
     "Judul: <code>/kr solo leveling</code>",
     "Genre: <code>/kr action</code>. Beberapa genre sekaligus: <code>/kr mystery horror</code> (komik yang punya semuanya).",
-    "Judul + genre: <code>/kr academy genre:action</code>",
+    "Judul + genre: <code>/kr academy genre: action comedy</code>. Semua kata di kanan <code>genre:</code> dibaca sebagai genre.",
     "Tanpa kata kunci: komik yang baru diperbarui.",
     "Posisi baca terakhir tiap komik diingat: buka daftar chapternya lalu tekan <b>Lanjut</b>.",
     "Komik dengan banyak chapter: lompat dengan <b>⏪ 5</b> / <b>5 ⏩</b>, atau tekan <b>Cari chapter lewat inline</b> lalu ketik nomornya.",
@@ -215,18 +222,14 @@ const kiryuuConfig: DefineScraperConfig = {
     const chapterList = await reader.searchChapters(query, page);
     if (chapterList) return chapterList;
 
-    // Genre bisa ditulis eksplisit ("genre:action", boleh lebih dari satu) atau sebagai kata kunci polos.
-    // Kata kunci polos dianggap genre hanya bila SEMUA katanya nama genre ("mystery horror");
-    // selain itu seluruhnya dicari sebagai judul.
+    // Aturan kata kunci:
+    //   - "judul genre: a b c" = semua yang di kanan "genre:" adalah genre, yang di kiri adalah judul;
+    //   - tanpa "genre:", kata kunci dianggap genre hanya bila SEMUA katanya nama genre ("mystery horror"),
+    //     selain itu seluruhnya dicari sebagai judul.
     const genres = await getGenres();
-    const genreIds: number[] = [];
-    let text = query
-      .replace(/\b(?:genre|g):(?:"([^"]+)"|(\S+))/gi, (_whole, quoted: string, bare: string) => {
-        genreIds.push(...(genresIn(quoted || bare, genres) ?? []));
-        return " ";
-      })
-      .replace(/\s+/g, " ")
-      .trim();
+    const marker = query.search(/\b(?:genre|g):/i);
+    let text = (marker >= 0 ? query.slice(0, marker) : query).replace(/\s+/g, " ").trim();
+    const genreIds = marker >= 0 ? genresIn(query.slice(marker).replace(/\b(?:genre|g):/gi, " "), genres, true) ?? [] : [];
     const plain = text ? genresIn(text, genres) : null;
     // Beberapa kata yang semuanya nama genre bisa juga sebuah judul ("horror game"):
     // judul yang cocok ditaruh di depan hasil genre
