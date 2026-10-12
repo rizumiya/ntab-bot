@@ -370,6 +370,19 @@ async function main() {
       return mangaId ? true : "tidak ada tombol Baca";
     });
     await step("inline .kr", inline(USER, ".kr one piece"), (c) => sent(c, "answerInlineQuery", "m:kr:read:"));
+    const titlesOf = (c: typeof calls) => (c.find((x) => x.method === "answerInlineQuery")?.payload.results ?? []) as any[];
+    // Laporan pengguna: ".kr mystery horror" kosong karena dua genre dibaca sebagai satu judul
+    await step("dua genre sekaligus: komik yang punya keduanya", inline(USER, ".kr mystery horror"), (c) => {
+      const r = titlesOf(c);
+      // Keterangan hanya memuat 5 genre pertama, jadi cukup dipastikan sebagian besar menampilkan salah satunya
+      const shown = r.filter((x) => /Mystery|Horror/.test(x.input_message_content.message_text));
+      return r.length >= 5 && shown.length >= r.length - 2 ? true : `hasil ${r.length}, menampilkan genre: ${shown.length}`;
+    });
+    await step("genre dua kata + genre lain", inline(USER, ".kr slice of life, comedy"), (c) => titlesOf(c).length >= 5 || `hasil ${titlesOf(c).length}`);
+    await step("kata genre yang juga judul: judul yang cocok di urutan depan", inline(USER, ".kr horror game"), (c) => {
+      const r = titlesOf(c);
+      return /horror game/i.test(r[0]?.title ?? "") && r.length > 1 ? true : `hasil: ${r.map((x) => x.title).join(" | ")}`;
+    });
     await step("daftar chapter", press(USER, `m:kr:read:${mangaId}`), (c) => {
       chapterId = find(c, /m:kr:p:(\d+):0/);
       return chapterId ? true : "tidak ada tombol chapter";

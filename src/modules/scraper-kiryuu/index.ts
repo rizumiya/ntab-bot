@@ -42,7 +42,10 @@ const feedCache = new TtlCache<string, { title: string; info?: string; chapters:
 );
 const pagesCache = new TtlCache<string, { urls: string[]; mangaId?: string; number: string }>(30 * 60_000, 200);
 
-/** Daftar genre situs: nama (huruf kecil) -> ID. */
+/** Samakan ejaan nama genre: "Sci-Fi" = "sci fi", "Boys' Love" = "boys love". */
+const genreKey = (name: string) => name.toLowerCase().replace(/['’]/g, "").replace(/[-_\s]+/g, " ").trim();
+
+/** Daftar genre situs: nama (lihat `genreKey`) -> ID. */
 async function getGenres(): Promise<Map<string, number>> {
   const cached = genreCache.get("genres");
   if (cached) return cached;
@@ -51,7 +54,7 @@ async function getGenres(): Promise<Map<string, number>> {
   try {
     for (const page of [1, 2]) {
       const list = await api<Array<{ id: number; name: string }>>(`/wp/v2/genre?per_page=100&page=${page}&_fields=id,name`);
-      for (const g of list) genres.set(g.name.toLowerCase(), g.id);
+      for (const g of list) genres.set(genreKey(g.name), g.id);
       if (list.length < 100) break;
     }
     genreCache.set("genres", genres);
@@ -67,6 +70,25 @@ const isAdult = (m: KiryuuManga) => (m.metadata?.tax ?? []).some((t) => t.taxono
 function isBlocked(m: KiryuuManga): boolean {
   const genres = (m.metadata?.tax ?? []).filter((t) => t.taxonomy === "genre").flatMap((t) => [t.slug, t.name]);
   return isMinorContent(genres, isAdult(m));
+}
+
+/**
+ * Baca deretan kata sebagai nama-nama genre, mis. "mystery horror" atau "slice of life, comedy".
+ * Nama terpanjang dicoba lebih dulu. Mengembalikan null bila ada kata yang bukan genre:
+ * berarti kata kunci itu sebuah judul.
+ */
+function genresIn(text: string, genres: Map<string, number>): number[] | null {
+  const words = genreKey(text.replace(/,/g, " ")).split(" ").filter(Boolean);
+  const ids: number[] = [];
+  for (let i = 0; i < words.length; ) {
+    let length = Math.min(4, words.length - i);
+    let id: number | undefined;
+    for (; length > 0 && id === undefined; length--) id = genres.get(words.slice(i, i + length).join(" "));
+    if (id === undefined) return null;
+    ids.push(id);
+    i += length + 1;
+  }
+  return [...new Set(ids)];
 }
 
 function toItem(m: KiryuuManga): ScraperItem {
@@ -170,7 +192,8 @@ const kiryuuConfig: DefineScraperConfig = {
   },
   help: [
     "Judul: <code>/kr solo leveling</code>",
-    "Genre: <code>/kr genre:action</code>, atau cukup <code>/kr action</code>",
+    "Genre: <code>/kr action</code>. Beberapa genre sekaligus: <code>/kr mystery horror</code> (komik yang punya semuanya).",
+    "Judul + genre: <code>/kr academy genre:action</code>",
     "Tanpa kata kunci: komik yang baru diperbarui.",
     "Posisi baca terakhir tiap komik diingat: buka daftar chapternya lalu tekan <b>Lanjut</b>.",
     "Komik dengan banyak chapter: lompat dengan <b>⏪ 5</b> / <b>5 ⏩</b>, atau tekan <b>Cari chapter lewat inline</b> lalu ketik nomornya.",
@@ -192,32 +215,52 @@ const kiryuuConfig: DefineScraperConfig = {
     const chapterList = await reader.searchChapters(query, page);
     if (chapterList) return chapterList;
 
-    let text = query.trim();
-    let genreId: number | undefined;
-
-    const explicit = text.match(/\b(?:genre|g):(?:"([^"]+)"|(\S+))/i);
-    const genreName = (explicit ? explicit[1] || explicit[2] : text).toLowerCase();
-    if (genreName) {
-      genreId = (await getGenres()).get(genreName);
-      if (explicit) text = text.replace(explicit[0], "").trim();
-      else if (genreId) text = "";
+    // Genre bisa ditulis eksplisit ("genre:action", boleh lebih dari satu) atau sebagai kata kunci polos.
+    // Kata kunci polos dianggap genre hanya bila SEMUA katanya nama genre ("mystery horror");
+    // selain itu seluruhnya dicari sebagai judul.
+    const genres = await getGenres();
+    const genreIds: number[] = [];
+    let text = query
+      .replace(/\b(?:genre|g):(?:"([^"]+)"|(\S+))/gi, (_whole, quoted: string, bare: string) => {
+        genreIds.push(...(genresIn(quoted || bare, genres) ?? []));
+        return " ";
+      })
+      .replace(/\s+/g, " ")
+      .trim();
+    const plain = text ? genresIn(text, genres) : null;
+    // Beberapa kata yang semuanya nama genre bisa juga sebuah judul ("horror game"):
+    // judul yang cocok ditaruh di depan hasil genre
+    const alsoTitle = plain && plain.length > 1 && page === 1 ? text : "";
+    if (plain) {
+      genreIds.push(...plain);
+      text = "";
     }
+
+    // Beberapa genre = komik yang memiliki semuanya (bawaan WordPress adalah "salah satu")
+    const unique = [...new Set(genreIds)];
+    const genreFilter =
+      unique.length > 1 ? `&genre[terms]=${unique.join(",")}&genre[operator]=AND` : unique.length === 1 ? `&genre=${unique[0]}` : "";
 
     const params =
       `?per_page=${PAGE_SIZE}&page=${page}&_fields=id,link,title,excerpt,metadata` +
       (text ? `&search=${encodeURIComponent(text)}` : "&orderby=modified") +
-      (genreId ? `&genre=${genreId}` : "");
+      genreFilter;
 
+    const fields = "_fields=id,link,title,excerpt,metadata";
     let list: KiryuuManga[];
     try {
-      list = await api<KiryuuManga[]>(`/wp/v2/manga${params}`);
+      const [byTitle, found] = await Promise.all([
+        alsoTitle ? api<KiryuuManga[]>(`/wp/v2/manga?per_page=5&${fields}&search=${encodeURIComponent(alsoTitle)}`).catch(() => []) : [],
+        api<KiryuuManga[]>(`/wp/v2/manga${params}`),
+      ]);
+      list = [...byTitle, ...found.filter((m) => !byTitle.some((t) => t.id === m.id))];
     } catch (err) {
       // WordPress membalas 400 bila nomor halaman melewati halaman terakhir
       if (page > 1 && (err as Error).message === "HTTP 400") return { items: [], hasNextPage: false };
       throw err;
     }
 
-    return { items: list.filter((m) => !isBlocked(m)).map(toItem), hasNextPage: list.length === PAGE_SIZE };
+    return { items: list.filter((m) => !isBlocked(m)).map(toItem), hasNextPage: list.length >= PAGE_SIZE };
   },
 
   async getMetadata(postId) {
@@ -242,7 +285,7 @@ const kiryuuConfig: DefineScraperConfig = {
             `📚 <b>Kiryuu</b> · komik berbahasa Indonesia\n\n` +
               `Ketik judul atau genre setelah perintah:\n` +
               `• <code>/kr solo leveling</code>\n` +
-              `• <code>/kr genre:action</code>\n\n` +
+              `• <code>/kr mystery horror</code> (genre, boleh lebih dari satu)\n\n` +
               `Atau tekan tombol di bawah untuk mencari sambil melihat sampulnya.`,
             new InlineKeyboard().switchInlineCurrent("🔍 Cari komik", ".kr ")
           );
