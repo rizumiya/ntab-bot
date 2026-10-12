@@ -62,11 +62,10 @@ const WARM_CONCURRENCY = 6;
 
 /** Halaman Telegraph sebuah chapter, seperti yang disimpan di database. */
 interface TelegraphPage {
-  url: string;
+  /** URL tiap bagian, berurutan. Chapter pendek hanya punya satu. */
+  urls: string[];
   /** Jumlah gambar setelah halaman memanjang dipotong. */
   images: number;
-  /** Jumlah halaman Telegraph bersambung yang memuat chapter ini. */
-  parts?: number;
   /** Waktu dibuat (epoch ms). */
   at: number;
 }
@@ -81,7 +80,8 @@ interface TelegraphPage {
  *     lalu dipakai ulang oleh semua pengguna (alamatnya disimpan di database).
  *
  * Tombol yang disediakan: `read` (arg "<id manga>[:<halaman daftar>]"),
- * `p` (arg "<id chapter>:<indeks halaman>"), `tg` dan `tgr` (buat ulang; arg "<id chapter>"),
+ * `p` (arg "<id chapter>:<indeks halaman>"), `tg` (arg "<id chapter>[:<indeks bagian>]"),
+ * `tgr` (buat ulang; arg "<id chapter>"),
  * `mode` (arg "<id manga>:<halaman daftar>"), dan `close`.
  */
 export function createMangaReader(source: ReaderSource) {
@@ -257,26 +257,27 @@ export function createMangaReader(source: ReaderSource) {
     await mapLimit(cold, 2, (url) => warmUrl(url));
 
     // Judul tidak memuat apa pun tentang peminta: halaman ini milik bersama
-    const published = await publishTelegraphAlbum({
+    const urls = await publishTelegraphAlbum({
       title: `${truncate(feed?.title ?? source.siteName, 180)} - Chapter ${pages.number}`,
       authorName: `@${ctx.me.username}`,
       authorUrl: `https://t.me/${ctx.me.username}`,
       images,
     });
-    return { url: published.url, images: images.length, parts: published.parts, at: Date.now() };
+    return { urls, images: images.length, at: Date.now() };
   }
 
   function savedTelegraph(ctx: BotContext, chapterId: string): TelegraphPage | null {
     try {
       const page = JSON.parse(ctx.db.getValue(telegraphKey(chapterId)) ?? "null") as TelegraphPage | null;
-      return page?.url && Date.now() - page.at < TELEGRAPH_TTL_MS ? page : null;
+      // Simpanan versi lama (tanpa daftar bagian) dianggap tidak ada, jadi dibuat ulang
+      return page?.urls?.length && Date.now() - page.at < TELEGRAPH_TTL_MS ? page : null;
     } catch {
       return null;
     }
   }
 
   /** Satu chapter penuh sebagai halaman Telegraph; dibuat bila belum ada, selebihnya diambil dari simpanan. */
-  async function showTelegraph(ctx: BotContext, chapterId: string): Promise<void> {
+  async function showTelegraph(ctx: BotContext, chapterId: string, partIndex = 0): Promise<void> {
     const pages = await source.getPages(chapterId).catch(() => null);
     if (!pages || pages.urls.length === 0) {
       await notify(ctx, `Chapter ini tidak bisa dibuka di Telegram. Baca langsung di ${source.siteName}.`);
@@ -330,7 +331,20 @@ export function createMangaReader(source: ReaderSource) {
     const previous = position > 0 ? feed!.chapters[position - 1] : undefined;
     const next = position >= 0 ? feed!.chapters[position + 1] : undefined;
 
-    const kb = new InlineKeyboard().url(`⚡ Baca Ch. ${pages.number}`, page.url).row();
+    // Chapter panjang terdiri dari beberapa halaman Telegraph. Tautan antarbagian di dalam halaman
+    // dibuka Telegram sebagai tautan biasa, jadi perpindahan bagian dilakukan di sini: pesan ini
+    // menampilkan pratinjau (dan tombol Instant View) bagian yang sedang dipilih.
+    const total = page.urls.length;
+    const part = Math.min(Math.max(0, partIndex), total - 1);
+    const url = page.urls[part];
+    const partNote = total > 1 ? ` · bagian ${part + 1}/${total}` : "";
+
+    const kb = new InlineKeyboard().url(`⚡ Baca Ch. ${pages.number}${total > 1 ? ` (${part + 1}/${total})` : ""}`, url).row();
+    if (total > 1) {
+      if (part > 0) kb.text(`◀️ Bagian ${part}`, cb(ns, "tg", `${chapterId}:${part - 1}`));
+      if (part < total - 1) kb.text(`Bagian ${part + 2} ▶️`, cb(ns, "tg", `${chapterId}:${part + 1}`));
+      kb.row();
+    }
     if (previous) kb.text(`◀️ Ch. ${previous.number}`, cb(ns, "tg", previous.id));
     if (next) kb.text(`Ch. ${next.number} ▶️`, cb(ns, "tg", next.id));
     kb.row();
@@ -343,11 +357,10 @@ export function createMangaReader(source: ReaderSource) {
 
     const text =
       `📖 <b>${htmlEscape(feed?.title ?? "Manga")}</b> · Ch. ${htmlEscape(pages.number)}\n` +
-      `${page.images} gambar` +
-      ((page.parts ?? 1) > 1 ? ` dalam ${page.parts} bagian bersambung` : "") +
-      ` · <a href="${htmlEscape(page.url)}">buka di Telegraph</a>`;
+      `${page.images} gambar${partNote} · <a href="${htmlEscape(url)}">buka di Telegraph</a>` +
+      (total > 1 && part < total - 1 ? `\nSelesai bagian ini? Tekan <b>Bagian ${part + 2} ▶️</b> di bawah.` : "");
     // Pratinjau tautan dinyalakan: dari situlah tombol Instant View muncul
-    const extra = { parse_mode: "HTML" as const, reply_markup: kb, link_preview_options: { url: page.url } };
+    const extra = { parse_mode: "HTML" as const, reply_markup: kb, link_preview_options: { url } };
 
     // Dari daftar chapter atau chapter Telegraph lain (pesan teks): ganti di tempat
     const current = ctx.callbackQuery?.message;
@@ -387,8 +400,9 @@ export function createMangaReader(source: ReaderSource) {
     },
     {
       action: "tg",
-      async handler(ctx, chapterId) {
-        if (source.idPattern.test(chapterId)) await showTelegraph(ctx, chapterId);
+      async handler(ctx, arg) {
+        const [chapterId, part] = arg.split(":");
+        if (source.idPattern.test(chapterId)) await showTelegraph(ctx, chapterId, parseInt(part, 10) || 0);
       },
     },
     {

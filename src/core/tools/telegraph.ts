@@ -78,9 +78,9 @@ export interface TelegraphAlbum {
 /**
  * Terbitkan deretan gambar sebagai halaman Telegraph.
  * Bila gambarnya terlalu banyak untuk satu halaman, dibuat beberapa bagian sama besar yang saling
- * bersambung ("Judul (2/3)"); `url` adalah bagian pertama.
+ * bersambung ("Judul (2/3)"). Mengembalikan URL tiap bagian, berurutan.
  */
-export async function publishTelegraphAlbum(album: TelegraphAlbum): Promise<{ url: string; parts: number }> {
+export async function publishTelegraphAlbum(album: TelegraphAlbum): Promise<string[]> {
   // Dibagi rata (218 gambar = 3 x 73), bukan 100 + 100 + 18
   const perPart = Math.ceil(album.images.length / Math.ceil(album.images.length / MAX_IMAGES_PER_PAGE));
   const parts: Node[][] = [[]];
@@ -98,11 +98,12 @@ export async function publishTelegraphAlbum(album: TelegraphAlbum): Promise<{ ur
   }
 
   // Dibuat dari bagian terakhir, supaya tiap bagian bisa menaut ke bagian sesudahnya
+  const urls: string[] = [];
   let nextUrl = "";
   for (let i = parts.length - 1; i >= 0; i--) {
     const content = [...parts[i]];
     if (nextUrl) {
-      content.push({ tag: "p", children: [{ tag: "a", attrs: { href: nextUrl }, children: [`Lanjut ke bagian ${i + 2} dari ${parts.length} ▶`] }] });
+      content.push({ tag: "p", children: [{ tag: "a", attrs: { href: nextUrl }, children: [`Lanjut ke bagian ${i + 2} dari ${parts.length} ▶`] }, " (agar tetap Instant View: kembali ke bot, tekan tombol Bagian berikutnya)"] });
     }
     nextUrl = await createPage({
       title: parts.length > 1 ? `${album.title.slice(0, 240)} (${i + 1}/${parts.length})` : album.title,
@@ -110,6 +111,7 @@ export async function publishTelegraphAlbum(album: TelegraphAlbum): Promise<{ ur
       authorUrl: album.authorUrl,
       content,
     });
+    urls.unshift(nextUrl);
   }
-  return { url: nextUrl, parts: parts.length };
+  return urls;
 }
