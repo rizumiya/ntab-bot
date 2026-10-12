@@ -340,14 +340,15 @@ async function main() {
   });
   await step("Telegraph: akun dibuat sekali, isi panjang dipecah jadi bagian bersambung", say(USER, "abaikan"), async () => {
     const images = Array.from({ length: 500 }, (_, i) => `https://wsrv.nl/?url=${"x".repeat(150)}${i}`);
-    const first = await publishTelegraphAlbum({ title: "Uji - Chapter 1", authorName: "@ntab_test_bot", images });
+    const { url: first, parts: partCount } = await publishTelegraphAlbum({ title: "Uji - Chapter 1", authorName: "@ntab_test_bot", images });
     await publishTelegraphAlbum({ title: "Uji - Chapter 2", authorName: "@ntab_test_bot", images: images.slice(0, 3) });
 
     const accounts = telegraphCalls.filter((t) => t.method === "createAccount").length;
     const pages = telegraphCalls.filter((t) => t.method === "createPage");
     const parts = pages.filter((t) => String(t.body.title).startsWith("Uji - Chapter 1"));
     if (accounts !== 1) return `createAccount dipanggil ${accounts} kali`;
-    if (parts.length < 2) return `hanya ${parts.length} bagian`;
+    if (parts.length !== 5 || partCount !== 5) return `${parts.length} bagian, seharusnya 5 (maks 100 gambar per halaman)`;
+    if (parts.some((t) => t.body.content.filter((n: any) => n.tag === "img").length !== 100)) return "bagian tidak dibagi rata";
     if (parts.some((t) => Buffer.byteLength(JSON.stringify(t.body.content)) > 64 * 1024)) return "ada bagian di atas 64 KB";
     const count = parts.reduce((sum, t) => sum + t.body.content.filter((n: any) => n.tag === "img").length, 0);
     if (count !== 500) return `${count} gambar dari 500`;
@@ -435,11 +436,20 @@ async function main() {
       pagesMade() === before ? sent(c, "editMessageText", "telegra.ph/uji-") : "halaman dibuat ulang"
     );
     await new Promise((resolve) => setTimeout(resolve, 3200)); // jeda anti-spam pembuatan halaman per pengguna
-    await step("chapter manhwa: gambar memanjang dipotong", press(USER, "m:kr:tg:817012"), (c) => {
-      const content = JSON.stringify(telegraphCalls[telegraphCalls.length - 1].body.content);
-      const slices = content.match(/wsrv\.nl/g)?.length ?? 0;
-      return slices > 20 ? sent(c, "editMessageText", "gambar") : `hanya ${slices} potongan`;
+    before = pagesMade();
+    await step("chapter manhwa: gambar memanjang dipotong, maks 100 gambar per halaman", press(USER, "m:kr:tg:817012"), (c) => {
+      const made = telegraphCalls.filter((t) => t.method === "createPage").slice(before);
+      const counts = made.map((t) => t.body.content.filter((n: any) => n.tag === "img").length);
+      const slices = JSON.stringify(made.map((t) => t.body.content)).match(/wsrv\.nl/g)?.length ?? 0;
+      if (slices <= 20) return `hanya ${slices} potongan`;
+      if (counts.some((n) => n > 100)) return `gambar per halaman: ${counts.join(", ")}`;
+      return sent(c, "editMessageText", "m:kr:tgr:817012");
     });
+    before = pagesMade();
+    await new Promise((resolve) => setTimeout(resolve, 3200));
+    await step("Buat ulang: halaman baru di alamat baru", press(USER, "m:kr:tgr:600741"), (c) =>
+      pagesMade() === before + 1 ? sent(c, "editMessageText", `telegra.ph/uji-${telegraphCalls.length}`) : `createPage dipanggil ${pagesMade() - before} kali`
+    );
     await step("kembali ke mode per halaman", press(USER, "m:kr:mode:600709:1"), (c) => sent(c, "editMessageText", "m:kr:p:600741:0"));
 
     console.log("\nKonten anak di bawah umur (butuh internet)");

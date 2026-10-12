@@ -65,6 +65,8 @@ interface TelegraphPage {
   url: string;
   /** Jumlah gambar setelah halaman memanjang dipotong. */
   images: number;
+  /** Jumlah halaman Telegraph bersambung yang memuat chapter ini. */
+  parts?: number;
   /** Waktu dibuat (epoch ms). */
   at: number;
 }
@@ -79,7 +81,7 @@ interface TelegraphPage {
  *     lalu dipakai ulang oleh semua pengguna (alamatnya disimpan di database).
  *
  * Tombol yang disediakan: `read` (arg "<id manga>[:<halaman daftar>]"),
- * `p` (arg "<id chapter>:<indeks halaman>"), `tg` (arg "<id chapter>"),
+ * `p` (arg "<id chapter>:<indeks halaman>"), `tg` dan `tgr` (buat ulang; arg "<id chapter>"),
  * `mode` (arg "<id manga>:<halaman daftar>"), dan `close`.
  */
 export function createMangaReader(source: ReaderSource) {
@@ -255,13 +257,13 @@ export function createMangaReader(source: ReaderSource) {
     await mapLimit(cold, 2, (url) => warmUrl(url));
 
     // Judul tidak memuat apa pun tentang peminta: halaman ini milik bersama
-    const url = await publishTelegraphAlbum({
+    const published = await publishTelegraphAlbum({
       title: `${truncate(feed?.title ?? source.siteName, 180)} - Chapter ${pages.number}`,
       authorName: `@${ctx.me.username}`,
       authorUrl: `https://t.me/${ctx.me.username}`,
       images,
     });
-    return { url, images: images.length, at: Date.now() };
+    return { url: published.url, images: images.length, parts: published.parts, at: Date.now() };
   }
 
   function savedTelegraph(ctx: BotContext, chapterId: string): TelegraphPage | null {
@@ -333,13 +335,17 @@ export function createMangaReader(source: ReaderSource) {
     if (next) kb.text(`Ch. ${next.number} ▶️`, cb(ns, "tg", next.id));
     kb.row();
     if (pages.mangaId) kb.text("📚 Chapter", cb(ns, "read", pages.mangaId));
+    // Untuk halaman yang tidak mendapat Instant View atau gambarnya sudah mati: terbitkan ulang di alamat baru
+    kb.text("🔄 Buat ulang", cb(ns, "tgr", chapterId));
     kb.text("✖️ Tutup", cb(ns, "close"));
 
     if (pages.mangaId) ctx.db.setUserSetting(ctx.user.id, progressKey(pages.mangaId), `${chapterId}:0`);
 
     const text =
       `📖 <b>${htmlEscape(feed?.title ?? "Manga")}</b> · Ch. ${htmlEscape(pages.number)}\n` +
-      `${page.images} gambar · <a href="${htmlEscape(page.url)}">buka di Telegraph</a>`;
+      `${page.images} gambar` +
+      ((page.parts ?? 1) > 1 ? ` dalam ${page.parts} bagian bersambung` : "") +
+      ` · <a href="${htmlEscape(page.url)}">buka di Telegraph</a>`;
     // Pratinjau tautan dinyalakan: dari situlah tombol Instant View muncul
     const extra = { parse_mode: "HTML" as const, reply_markup: kb, link_preview_options: { url: page.url } };
 
@@ -383,6 +389,14 @@ export function createMangaReader(source: ReaderSource) {
       action: "tg",
       async handler(ctx, chapterId) {
         if (source.idPattern.test(chapterId)) await showTelegraph(ctx, chapterId);
+      },
+    },
+    {
+      action: "tgr",
+      async handler(ctx, chapterId) {
+        if (!source.idPattern.test(chapterId) || building.has(chapterId)) return;
+        ctx.db.setValue(telegraphKey(chapterId), "");
+        await showTelegraph(ctx, chapterId);
       },
     },
     {

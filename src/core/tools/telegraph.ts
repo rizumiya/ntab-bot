@@ -12,6 +12,11 @@ const API = "https://api.telegra.ph";
 const TOKEN_KEY = "telegraph:token";
 /** Batas isi satu halaman Telegraph adalah 64 KB; sisanya disisakan untuk tautan "bagian berikutnya". */
 const MAX_CONTENT_BYTES = 60 * 1024;
+/**
+ * Gambar per halaman. Telegram mengambil semua gambar sebuah halaman saat membuat Instant View dan
+ * menyerah bila terlalu banyak/lama (teramati: 157 gambar berhasil, 218 gagal), jadi dijaga jauh di bawahnya.
+ */
+const MAX_IMAGES_PER_PAGE = 100;
 
 type Node = string | { tag: string; attrs?: Record<string, string>; children?: Node[] };
 
@@ -71,17 +76,20 @@ export interface TelegraphAlbum {
 }
 
 /**
- * Terbitkan deretan gambar sebagai halaman Telegraph dan kembalikan URL-nya.
- * Bila isinya melebihi batas satu halaman, dibuat beberapa bagian yang saling bersambung
- * ("Judul (2/3)"); yang dikembalikan adalah URL bagian pertama.
+ * Terbitkan deretan gambar sebagai halaman Telegraph.
+ * Bila gambarnya terlalu banyak untuk satu halaman, dibuat beberapa bagian sama besar yang saling
+ * bersambung ("Judul (2/3)"); `url` adalah bagian pertama.
  */
-export async function publishTelegraphAlbum(album: TelegraphAlbum): Promise<string> {
+export async function publishTelegraphAlbum(album: TelegraphAlbum): Promise<{ url: string; parts: number }> {
+  // Dibagi rata (218 gambar = 3 x 73), bukan 100 + 100 + 18
+  const perPart = Math.ceil(album.images.length / Math.ceil(album.images.length / MAX_IMAGES_PER_PAGE));
   const parts: Node[][] = [[]];
   let bytes = 0;
   for (const src of album.images) {
     const node: Node = { tag: "img", attrs: { src } };
     const size = Buffer.byteLength(JSON.stringify(node)) + 1;
-    if (bytes + size > MAX_CONTENT_BYTES && parts[parts.length - 1].length > 0) {
+    const current = parts[parts.length - 1];
+    if (current.length > 0 && (current.length >= perPart || bytes + size > MAX_CONTENT_BYTES)) {
       parts.push([]);
       bytes = 0;
     }
@@ -103,5 +111,5 @@ export async function publishTelegraphAlbum(album: TelegraphAlbum): Promise<stri
       content,
     });
   }
-  return nextUrl;
+  return { url: nextUrl, parts: parts.length };
 }
