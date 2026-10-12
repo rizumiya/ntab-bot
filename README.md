@@ -92,7 +92,7 @@ Tiap album ditutup dengan perintah lanjutan yang tinggal disalin, mis. `/wh suns
 | 🖼️ / ⚡ Mode | Di daftar chapter: ganti cara baca antara **per halaman** dan **Telegraph** |
 | ⚡ Telegraph | Satu chapter penuh sebagai satu halaman Instant View, tinggal gulir |
 
-**Mode Telegraph.** Halaman dibuat sekali per chapter lalu dipakai ulang oleh semua pengguna (alamatnya disimpan di database selama 30 hari). Gambar webtoon/manhwa yang sangat panjang dipotong otomatis menjadi potongan seukuran layar, dan chapter di atas 100 gambar dibagi menjadi beberapa bagian (Telegram tidak membuat Instant View untuk halaman yang gambarnya terlalu banyak). Pindah bagian lewat tombol **Bagian 2 ▶️** di pesan bot, supaya tiap bagian tetap terbuka sebagai Instant View. Bila Instant View tetap tidak muncul, tekan **🔄 Buat ulang**. Server bot tidak mengunduh gambarnya: halaman Telegraph hanya memuat tautan ke server gambar Kiryuu, dan pemotongan dikerjakan CDN publik `wsrv.nl` saat halaman dibuka.
+**Mode Telegraph.** Halaman dibuat sekali per chapter lalu dipakai ulang oleh semua pengguna (alamatnya disimpan di database selama 30 hari). Gambar webtoon/manhwa yang sangat panjang dipotong otomatis menjadi potongan seukuran layar, dan chapter di atas 150 gambar dibagi menjadi beberapa bagian (Telegram tidak membuat Instant View untuk halaman yang gambarnya terlalu banyak). Pindah bagian lewat tombol **Bagian 2 ▶️** di pesan bot, supaya tiap bagian tetap terbuka sebagai Instant View. Bila Instant View tetap tidak muncul, tekan **🔄 Buat ulang**. Server bot tidak mengunduh gambarnya: halaman Telegraph hanya memuat tautan ke server gambar Kiryuu, dan pemotongan dikerjakan CDN publik `wsrv.nl` saat halaman dibuka.
 
 Panduan lengkap per fitur tersedia di dalam bot: **/help**.
 

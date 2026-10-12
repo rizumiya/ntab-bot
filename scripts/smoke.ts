@@ -348,8 +348,8 @@ async function main() {
     const parts = pages.filter((t) => String(t.body.title).startsWith("Uji - Chapter 1"));
     if (accounts !== 1) return `createAccount dipanggil ${accounts} kali`;
     const first = albumUrls[0];
-    if (parts.length !== 5 || albumUrls.length !== 5) return `${parts.length} bagian, seharusnya 5 (maks 100 gambar per halaman)`;
-    if (parts.some((t) => t.body.content.filter((n: any) => n.tag === "img").length !== 100)) return "bagian tidak dibagi rata";
+    if (parts.length !== 4 || albumUrls.length !== 4) return `${parts.length} bagian, seharusnya 4 (maks 150 gambar per halaman)`;
+    if (parts.some((t) => t.body.content.filter((n: any) => n.tag === "img").length !== 125)) return "bagian tidak dibagi rata";
     if (parts.some((t) => Buffer.byteLength(JSON.stringify(t.body.content)) > 64 * 1024)) return "ada bagian di atas 64 KB";
     const count = parts.reduce((sum, t) => sum + t.body.content.filter((n: any) => n.tag === "img").length, 0);
     if (count !== 500) return `${count} gambar dari 500`;
@@ -444,23 +444,23 @@ async function main() {
     );
     await new Promise((resolve) => setTimeout(resolve, 3200)); // jeda anti-spam pembuatan halaman per pengguna
     before = pagesMade();
-    await step("chapter manhwa: gambar memanjang dipotong, maks 100 gambar per halaman", press(USER, "m:kr:tg:817012"), (c) => {
+    await step("chapter manhwa: gambar memanjang dipotong, maks 150 gambar per halaman", press(USER, "m:kr:tg:773549"), (c) => {
       const made = telegraphCalls.filter((t) => t.method === "createPage").slice(before);
       const counts = made.map((t) => t.body.content.filter((n: any) => n.tag === "img").length);
       const slices = JSON.stringify(made.map((t) => t.body.content)).match(/wsrv\.nl/g)?.length ?? 0;
       if (slices <= 20) return `hanya ${slices} potongan`;
-      if (counts.some((n) => n > 100)) return `gambar per halaman: ${counts.join(", ")}`;
+      if (counts.some((n) => n > 150)) return `gambar per halaman: ${counts.join(", ")}`;
       if (made.length < 2) return `chapter uji hanya ${made.length} halaman, perpindahan bagian tidak teruji`;
-      return sent(c, "editMessageText", "m:kr:tgr:817012") === true && sent(c, "editMessageText", "m:kr:tg:817012:1");
+      return sent(c, "editMessageText", "m:kr:tgr:773549") === true && sent(c, "editMessageText", "m:kr:tg:773549:1");
     });
-    await step("pindah ke bagian 2: pratinjau berganti, tanpa membuat halaman baru", press(USER, "m:kr:tg:817012:1"), (c) => {
+    await step("pindah ke bagian 2: pratinjau berganti, tanpa membuat halaman baru", press(USER, "m:kr:tg:773549:1"), (c) => {
       const made = telegraphCalls.filter((t) => t.method === "createPage").slice(before);
       const edit = c.find((x) => x.method === "editMessageText");
       // Bagian dibuat dari yang terakhir, jadi bagian 2 dari N adalah halaman ke-(N-1) yang dibuat
       const expected = `https://telegra.ph/uji-${telegraphCalls.indexOf(made[made.length - 2]) + 1}`;
       if (pagesMade() !== before + made.length) return "halaman dibuat ulang";
       if (edit?.payload.link_preview_options?.url !== expected) return `pratinjau: ${edit?.payload.link_preview_options?.url}, seharusnya ${expected}`;
-      return sent(c, "editMessageText", "bagian 2/") === true && sent(c, "editMessageText", "m:kr:tg:817012:0");
+      return sent(c, "editMessageText", "bagian 2/") === true && sent(c, "editMessageText", "m:kr:tg:773549:0");
     });
     before = pagesMade();
     await new Promise((resolve) => setTimeout(resolve, 3200));

@@ -14,9 +14,9 @@ const TOKEN_KEY = "telegraph:token";
 const MAX_CONTENT_BYTES = 60 * 1024;
 /**
  * Gambar per halaman. Telegram mengambil semua gambar sebuah halaman saat membuat Instant View dan
- * menyerah bila terlalu banyak/lama (teramati: 157 gambar berhasil, 218 gagal), jadi dijaga jauh di bawahnya.
+ * menyerah bila terlalu banyak/lama (teramati: 157 gambar berhasil, 218 gagal), jadi dijaga di bawah angka yang terbukti berhasil.
  */
-const MAX_IMAGES_PER_PAGE = 100;
+const MAX_IMAGES_PER_PAGE = 150;
 
 type Node = string | { tag: string; attrs?: Record<string, string>; children?: Node[] };
 
@@ -81,7 +81,7 @@ export interface TelegraphAlbum {
  * bersambung ("Judul (2/3)"). Mengembalikan URL tiap bagian, berurutan.
  */
 export async function publishTelegraphAlbum(album: TelegraphAlbum): Promise<string[]> {
-  // Dibagi rata (218 gambar = 3 x 73), bukan 100 + 100 + 18
+  // Dibagi rata (218 gambar = 2 x 109), bukan 150 + 68
   const perPart = Math.ceil(album.images.length / Math.ceil(album.images.length / MAX_IMAGES_PER_PAGE));
   const parts: Node[][] = [[]];
   let bytes = 0;
