@@ -168,6 +168,30 @@ async function main() {
   });
   await step("tab aktif memberi tahu, tidak memuat ulang", press(USER, "m:bm:here"), (c) => sent(c, "answerCallbackQuery", "sedang di tab ini") === true && (c.length === 1 || "ada panggilan lain"));
   await step("inline .bm", inline(USER, ".bm"), (c) => sent(c, "answerInlineQuery", "abc123"));
+  const realbooruAdapter = registry.get("scraper-realbooru")?.bookmarks;
+  if (realbooruAdapter) {
+    const originalResolve = realbooruAdapter.resolve;
+    realbooruAdapter.resolve = async () => ({
+      thumbUrl: "https://img.example/legacy-thumb.jpg",
+      postUrl: "https://realbooru.com/post/123",
+    });
+    repo.addBookmark({
+      userId: USER.id,
+      tier: "standard",
+      moduleId: "scraper-realbooru",
+      itemId: "123",
+      title: "Realbooru lama",
+      thumbUrl: "",
+      postUrl: "https://realbooru.com/post/123",
+      category: "image",
+    });
+    await step("inline .bm melengkapi thumbnail Realbooru lama", inline(USER, ".bm"), (c) => {
+      if (!sent(c, "answerInlineQuery", "legacy-thumb.jpg")) return "thumbnail lama tidak muncul";
+      const repaired = repo.getBookmarks(USER.id, "image", 30).find((b) => b.module_id === "scraper-realbooru");
+      return repaired?.thumb_url.includes("legacy-thumb.jpg") || "thumbnail tidak tersimpan untuk pembukaan berikutnya";
+    });
+    realbooruAdapter.resolve = originalResolve;
+  }
   await step("user lain tidak bisa menghapus", press(OWNER, `m:bm:del:${bmId}`), () => (repo.getBookmark(2, bmId) ? true : "terhapus oleh orang lain"));
   await step("hapus", press(USER, `m:bm:del:${bmId}`), () => (repo.getBookmark(2, bmId) ? "masih ada" : true));
   for (let i = 0; i < 25; i++) repo.addBookmark({ userId: 2, tier: "standard", moduleId: "x", itemId: String(i), title: "t", thumbUrl: "", postUrl: "", category: "image" });
@@ -186,6 +210,7 @@ async function main() {
   console.log("\nInline");
   await step("kosong: panduan prefix", inline(USER, ""), (c) => sent(c, "answerInlineQuery", ".wh"));
   await step("media-tools tanpa media", say(USER, "/mp3"), (c) => sent(c, "sendMessage", "Balas"));
+  await step("/mp4 tanpa input memberi panduan", say(USER, "/mp4"), (c) => sent(c, "sendMessage", "Balas"));
   await step("/sauce tanpa foto", say(USER, "/sauce"), (c) => sent(c, "sendMessage", "tangkapan layar"));
   await step("/mg sudah dihapus: tidak dijawab", say(USER, "/mg naruto"), (c) => c.length === 0 || "seharusnya diam");
 

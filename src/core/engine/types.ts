@@ -75,7 +75,7 @@ export interface MenuButton {
 export interface BookmarkAdapter {
   category: "image" | "manga";
   /** Lengkapi URL yang kosong pada data lama. */
-  resolve?: (itemId: string) => { thumbUrl?: string; postUrl?: string };
+  resolve?: (itemId: string) => { thumbUrl?: string; postUrl?: string } | Promise<{ thumbUrl?: string; postUrl?: string }>;
   /** Tombol aksi utama pada item bookmark. */
   openButton: { label: string; action: string };
 }

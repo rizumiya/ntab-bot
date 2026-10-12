@@ -5,6 +5,7 @@ import { BookmarkRow } from "../../core/db";
 import { registry } from "../../core/engine/registry";
 import { PLANS } from "../../core/plans";
 import { albumJobs, sendAlbum } from "../../core/tools/media";
+import { mapLimit } from "../../core/tools/limit";
 import { htmlEscape, isOwner, truncate } from "../../core/tools/text";
 import { addPager, cb, reply, show, toast } from "../../core/tools/ui";
 
@@ -15,9 +16,9 @@ type Category = "image" | "manga";
 const LABEL: Record<Category, string> = { image: "🖼️ Gambar", manga: "📖 Manga" };
 
 /** Lengkapi URL kosong pada data lama memakai adapter modul asalnya, lalu simpan. */
-function withUrls(ctx: BotContext, bm: BookmarkRow): BookmarkRow {
+async function withUrls(ctx: BotContext, bm: BookmarkRow): Promise<BookmarkRow> {
   if (bm.thumb_url && bm.post_url) return bm;
-  const fixed = registry.get(bm.module_id)?.bookmarks?.resolve?.(bm.item_id) ?? {};
+  const fixed = (await registry.get(bm.module_id)?.bookmarks?.resolve?.(bm.item_id)) ?? {};
   const thumb = bm.thumb_url || fixed.thumbUrl || "";
   const post = bm.post_url || fixed.postUrl || "";
   if (thumb !== bm.thumb_url || post !== bm.post_url) ctx.db.updateBookmarkUrls(bm.id, thumb, post);
@@ -66,12 +67,12 @@ async function showList(ctx: BotContext, category: Category, page: number): Prom
     );
   } else {
     // Daftar berupa teks bernomor: jumlah tombol tetap sedikit berapa pun banyaknya bookmark
-    items.forEach((row, i) => {
-      const bm = withUrls(ctx, row);
+    for (const [i, row] of items.entries()) {
+      const bm = await withUrls(ctx, row);
       const number = (current - 1) * PAGE_SIZE + i + 1;
       const title = htmlEscape(truncate(bm.title, 60));
       lines.push(`${number}. ${bm.post_url ? `<a href="${htmlEscape(bm.post_url)}">${title}</a>` : title} · ${htmlEscape(sourceName(bm))}`);
-    });
+    }
     lines.push("", "Buka, unduh, atau hapus sebuah item lewat <b>Lihat sebagai galeri</b>.");
 
     addPager(kb, current, totalPages, (p) => cb(NS, "list", `${category}:${p}`));
@@ -124,7 +125,7 @@ const bookmarks: BotModule = {
     async handler(ctx, _query, offset, prefix) {
       const category: Category = prefix === ".bmm" ? "manga" : "image";
       const start = parseInt(offset, 10) || 0;
-      const rows = ctx.db.getBookmarks(ctx.user.id, category, 30, start).map((b) => withUrls(ctx, b));
+      const rows = await mapLimit(ctx.db.getBookmarks(ctx.user.id, category, 30, start), 4, (b) => withUrls(ctx, b));
 
       if (rows.length === 0 && start === 0) {
         return {
@@ -195,10 +196,9 @@ const bookmarks: BotModule = {
       action: "album",
       async handler(ctx, page) {
         const offset = ((parseInt(page, 10) || 1) - 1) * PAGE_SIZE;
-        const rows = ctx.db
-          .getBookmarks(ctx.user.id, "image", PAGE_SIZE, offset)
-          .map((b) => withUrls(ctx, b))
-          .filter((b) => b.thumb_url);
+        const rows = (await mapLimit(ctx.db.getBookmarks(ctx.user.id, "image", PAGE_SIZE, offset), 4, (b) => withUrls(ctx, b))).filter(
+          (b) => b.thumb_url
+        );
         if (rows.length === 0) return toast(ctx, "Tidak ada gambar di halaman ini.", true);
 
         await toast(ctx, `📸 Mengirim ${rows.length} gambar...`);

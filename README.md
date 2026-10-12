@@ -29,7 +29,7 @@ Bot Telegram modular untuk mencari gambar anime dan wallpaper dari banyak sumber
 | 📷 Realbooru | `/rp` | `.rp` | VIP | Foto cosplay dan model (seluruhnya konten dewasa) |
 | 🎨 Pixiv | `/px` | `.px` | VIP | Fanart per tag, paket per ID karya, atau karya per ID kreator |
 | 📚 Kiryuu | `/kr` | `.kr` | Gratis | Komik berbahasa Indonesia, baca di Telegram |
-| 🎬 Media Tools | `/mp3`, `/mp4`, `/gif`, `/ugoira` | - | Gratis | Ambil audio, kompres video MP4, ubah video ke GIF, animasi Pixiv ke video |
+| 🎬 Media Tools | `/mp3`, `/mp4`, `/gif`, `/ugoira` | - | Gratis | Ambil audio, kompres video MP4 atau playlist HTTPS `.m3u8`, ubah video ke GIF, animasi Pixiv ke video |
 | 🔍 Cari Sumber Gambar | `/sauce` | - | Gratis | Judul anime dan episode, atau kreator sebuah fanart |
 | 👥 Moderasi Grup | `/warn`, `/mute`, `/ban`, `/setwelcome`, ... | - | Gratis | Peringatan bertingkat, bisukan, sambutan, aturan |
 | 🔗 Stiker & Tautan | `/stickers`, `/linklog`, `/links` | `.st` | Gratis | Indeks paket stiker, arsip tautan grup |
@@ -61,7 +61,11 @@ Harga dan durasi VIP diatur di [`src/core/plans.ts`](src/core/plans.ts).
 /kr solo leveling   cari komik, lalu tekan "Baca"
 /px 99040957        semua halaman sebuah karya Pixiv
 /sauce              (sambil membalas foto) cari judul anime
+/mp4                 (sambil membalas video) kompres video menjadi MP4
+/mp4 https://cdn.example/video.m3u8  unduh HLS VOD HTTPS, lalu kompres
 ```
+
+`/mp4` untuk tautan menerima playlist HLS VOD HTTPS, bukan siaran live. Unduhan dibatasi 200 MB dan 500 segmen; playlist dengan audio terpisah atau byte-range belum didukung. Hasil dikirim hanya jika lebih kecil dari sumber dan tidak melebihi 50 MB.
 
 Album bisa digeser dan dibatasi dengan menambahkan parameter di belakang kata kunci:
 

@@ -16,7 +16,16 @@ const PAGE_SIZE = 42;
 const VIDEO_TAGS = new Set(["video", "webm", "mp4", "animated", "sound"]);
 
 const postUrl = (id: string) => `${SITE}?page=post&s=view&id=${id}`;
-const absolute = (url: string) => url.replace(/([^:])\/\/+/g, "$1/");
+const absolute = (url: string) => new URL(url, SITE).href;
+
+async function getMetadata(postId: string) {
+  const $ = cheerio.load(await fetchText(postUrl(postId)));
+  const source = $("#image").attr("src") || $('meta[property="og:image"]').attr("content");
+  return {
+    thumbUrl: source ? proxied(absolute(source)) : undefined,
+    postUrl: postUrl(postId),
+  };
+}
 
 export default defineScraper({
   meta: {
@@ -31,6 +40,18 @@ export default defineScraper({
     version: "1.0.0",
   },
   prefix: ".rp",
+  bookmarks: {
+    category: "image",
+    openButton: { label: "📥 File HD", action: "dl" },
+    async resolve(postId) {
+      try {
+        return await getMetadata(postId);
+      } catch (err) {
+        console.warn("[scraper-realbooru] gagal mengambil thumbnail bookmark:", (err as Error).message);
+        return { postUrl: postUrl(postId) };
+      }
+    },
+  },
   help: [
     "Seluruh isi situs ini konten dewasa: hanya tampil bila NSFW dinyalakan di /settings, dan hanya di chat pribadi.",
     "Kata kunci memakai gaya tag booru, mis. <code>cosplay</code>. Awali dengan <code>-</code> untuk mengecualikan.",
@@ -86,5 +107,6 @@ export default defineScraper({
     }
   },
 
+  getMetadata,
   getPostUrl: postUrl,
 });
