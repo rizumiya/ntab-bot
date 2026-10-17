@@ -73,13 +73,16 @@ export async function fetchText(url: string, opts: RequestOptions = {}): Promise
 }
 
 /**
- * Ambil hanya `bytes` pertama sebuah berkas (mis. untuk membaca header gambar).
- * Memakai Range; bila server mengabaikannya, pembacaan tetap dihentikan setelah `bytes`.
+ * Ambil hanya `bytes` byte sebuah berkas mulai dari posisi `start` (mis. untuk membaca header gambar).
+ * Memakai Range; bila server mengabaikannya, bagian sebelum `start` dilewati dan pembacaan tetap
+ * dihentikan setelah `bytes`.
  */
-export async function fetchHead(url: string, bytes: number, opts: RequestOptions = {}): Promise<Buffer> {
-  const res = await request(url, { ...opts, headers: { Range: `bytes=0-${bytes - 1}`, ...opts.headers } });
+export async function fetchRange(url: string, start: number, bytes: number, opts: RequestOptions = {}): Promise<Buffer> {
+  const res = await request(url, { ...opts, headers: { Range: `bytes=${start}-${start + bytes - 1}`, ...opts.headers } });
   if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
 
+  // 206 = server menuruti Range; 200 = berkas dikirim dari awal
+  let skip = res.status === 206 ? 0 : start;
   const chunks: Buffer[] = [];
   let received = 0;
   const reader = res.body.getReader();
@@ -87,13 +90,24 @@ export async function fetchHead(url: string, bytes: number, opts: RequestOptions
     while (received < bytes) {
       const { done, value } = await reader.read();
       if (done) break;
-      chunks.push(Buffer.from(value));
-      received += value.length;
+      let chunk = Buffer.from(value);
+      if (skip > 0) {
+        const dropped = Math.min(skip, chunk.length);
+        chunk = chunk.subarray(dropped);
+        skip -= dropped;
+      }
+      chunks.push(chunk);
+      received += chunk.length;
     }
   } finally {
     await reader.cancel().catch(() => {});
   }
   return Buffer.concat(chunks).subarray(0, bytes);
+}
+
+/** `bytes` byte pertama sebuah berkas. */
+export function fetchHead(url: string, bytes: number, opts: RequestOptions = {}): Promise<Buffer> {
+  return fetchRange(url, 0, bytes, opts);
 }
 
 /**

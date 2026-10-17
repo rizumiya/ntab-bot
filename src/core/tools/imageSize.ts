@@ -1,4 +1,4 @@
-import { fetchHead } from "./http";
+import { fetchHead, fetchRange } from "./http";
 
 export interface ImageSize {
   width: number;
@@ -25,33 +25,61 @@ export function parseImageSize(head: Buffer): ImageSize | null {
     return null;
   }
 
-  // JPEG: telusuri segmen sampai bertemu SOF (penanda C0-CF selain C4, C8, CC)
-  if (head[0] === 0xff && head[1] === 0xd8) {
-    let pos = 2;
-    while (pos + 9 < head.length) {
-      if (head[pos] !== 0xff) return null;
-      const marker = head[pos + 1];
-      if (marker === 0xff) {
-        pos++;
-        continue;
-      }
-      if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
-        return { width: head.readUInt16BE(pos + 7), height: head.readUInt16BE(pos + 5) };
-      }
-      pos += 2 + head.readUInt16BE(pos + 2);
-    }
+  if (isJpeg(head)) {
+    const found = walkJpeg(head, 0, 2);
+    return found && "width" in found ? found : null;
   }
   return null;
 }
 
+const isJpeg = (head: Buffer) => head[0] === 0xff && head[1] === 0xd8;
+
+/**
+ * Telusuri segmen JPEG sampai bertemu SOF (penanda C0-CF selain C4, C8, CC), yang memuat ukuran gambar.
+ * `buf` adalah potongan berkas yang dimulai di posisi `base`; `pos` posisi mulai menelusuri (dihitung dari awal berkas).
+ * Bila segmen berikutnya berada di luar potongan, dikembalikan posisinya (`resume`) agar bisa diambil lanjutannya.
+ */
+function walkJpeg(buf: Buffer, base: number, pos: number): ImageSize | { resume: number } | null {
+  while (pos - base + 9 < buf.length) {
+    const at = pos - base;
+    if (buf[at] !== 0xff) return null;
+    const marker = buf[at + 1];
+    if (marker === 0xff) {
+      pos++;
+      continue;
+    }
+    if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+      return { width: buf.readUInt16BE(at + 7), height: buf.readUInt16BE(at + 5) };
+    }
+    pos += 2 + buf.readUInt16BE(at + 2);
+  }
+  return { resume: pos };
+}
+
+const PROBE_CHUNK = 64 * 1024;
+/** JPEG bisa membawa metadata (EXIF, XMP, Photoshop) ratusan KB sebelum ukurannya; lebih jauh dari ini dianggap tidak dikenali. */
+const PROBE_MAX_OFFSET = 4 * 1024 * 1024;
+
 /**
  * Ukuran gambar di sebuah URL tanpa mengunduh seluruh berkasnya: hanya 64 KB pertama yang diambil.
- * Null bila gagal diambil atau formatnya tidak dikenali.
+ * Pada JPEG yang metadatanya besar, metadata itu dilompati dan hanya potongan 64 KB di posisi
+ * segmen berikutnya yang diambil. Null bila gagal diambil atau formatnya tidak dikenali.
  */
 export async function probeImageSize(url: string): Promise<ImageSize | null> {
+  const valid = (size: ImageSize | null) => (size && size.width > 0 && size.height > 0 ? size : null);
   try {
-    const size = parseImageSize(await fetchHead(url, 64 * 1024));
-    return size && size.width > 0 && size.height > 0 ? size : null;
+    const head = await fetchHead(url, PROBE_CHUNK);
+    if (!isJpeg(head)) return valid(parseImageSize(head));
+
+    let found = walkJpeg(head, 0, 2);
+    // Tiap putaran melompat setidaknya satu segmen, jadi jumlahnya dibatasi agar berkas rusak tidak berputar terus
+    for (let hop = 0; hop < 16 && found && "resume" in found; hop++) {
+      if (found.resume > PROBE_MAX_OFFSET) return null;
+      const chunk = await fetchRange(url, found.resume, PROBE_CHUNK);
+      if (chunk.length < 10) return null;
+      found = walkJpeg(chunk, found.resume, found.resume);
+    }
+    return found && "width" in found ? valid(found) : null;
   } catch {
     return null;
   }

@@ -328,6 +328,35 @@ async function main() {
     const got = JSON.stringify([parseImageSize(png), parseImageSize(jpeg), parseImageSize(Buffer.alloc(40))]);
     return got === '[{"width":720,"height":8631},{"width":850,"height":1188},null]' || got;
   });
+  await step("ukuran JPEG bermetadata besar terbaca (metadata dilompati)", say(USER, "abaikan"), async () => {
+    const { probeImageSize } = await import("../src/core/tools/imageSize");
+    // JPEG tiruan: tiga segmen APP1 masing-masing 60 KB (seperti XMP besar), baru SOF0 berukuran 652x10866
+    const app1 = () => {
+      const seg = Buffer.alloc(2 + 60_000);
+      seg.writeUInt16BE(0xffe1, 0);
+      seg.writeUInt16BE(60_000, 2);
+      return seg;
+    };
+    const sof = Buffer.from([0xff, 0xc0, 0x00, 0x11, 0x08, 0x2a, 0x72, 0x02, 0x8c, ...new Array(12).fill(0)]);
+    const file = Buffer.concat([Buffer.from([0xff, 0xd8]), app1(), app1(), app1(), sof, Buffer.alloc(1000)]);
+    const ranges: string[] = [];
+    const previous = globalThis.fetch;
+    globalThis.fetch = (async (input: any, init?: any) => {
+      const url = String(typeof input === "string" || input instanceof URL ? input : input.url);
+      if (!url.startsWith("https://jpeg.example/")) return previous(input, init);
+      const range = String(init?.headers?.Range ?? "");
+      ranges.push(range);
+      const [, from, to] = range.match(/bytes=(\d+)-(\d+)/)!.map(Number);
+      return new Response(file.subarray(from, to + 1), { status: 206 });
+    }) as typeof fetch;
+    try {
+      const size = await probeImageSize("https://jpeg.example/a.jpg");
+      if (JSON.stringify(size) !== '{"width":652,"height":10866}') return `ukuran: ${JSON.stringify(size)}`;
+      return ranges.length <= 4 || `${ranges.length} permintaan: ${ranges.join(" ")}`;
+    } finally {
+      globalThis.fetch = previous;
+    }
+  });
   await step("gambar memanjang dipotong, gambar biasa dibiarkan", say(USER, "abaikan"), () => {
     const normal = sliceTallImage("https://cdn.example/1.jpg", { width: 850, height: 1188 });
     const unknown = sliceTallImage("https://cdn.example/1.jpg", null);
