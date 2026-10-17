@@ -103,7 +103,7 @@ Panduan lengkap per fitur tersedia di dalam bot: **/help**.
 | Wallhaven | Kata bebas | `/wh cyberpunk city` |
 | Konachan, Safebooru, Gelbooru, Danbooru, e621, Realbooru | Tag booru (garis bawah dalam satu tag; `-tag` mengecualikan) | `/kc hatsune_miku`, `.gb blue_archive -animated` |
 | Pixiv | Tag, ID karya, atau ID kreator | `/px genshin`, `/px 99040957`, `/px 99040957_p2`, `/px id:10415882` |
-| Kiryuu | Judul, atau satu/beberapa genre | `/kr solo leveling`, `/kr action`, `/kr mystery horror`, `/kr academy genre: action comedy` |
+| Kiryuu | Judul, atau satu/beberapa genre | `/kr solo leveling`, `/kr action`, `/kr mystery horror`, `/kr academy genre: action comedy`, `/kr genre: romance -adult` |
 
 ### Tampilan hasil
 

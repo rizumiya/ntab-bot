@@ -415,6 +415,14 @@ async function main() {
       const off = r.filter((x) => !/academy/i.test(x.title + x.input_message_content.message_text));
       return r.length >= 2 && off.length === 0 ? true : `hasil ${r.length}, tanpa "academy": ${off.map((x) => x.title).join(" | ")}`;
     });
+    // Laporan pengguna: "genre:romance -adult" masih menampilkan komik Adult
+    repo.setUserSetting(OWNER.id, "nsfw", "1"); // komik Adult hanya tampil bila NSFW menyala
+    await step("genre bertanda minus disingkirkan", inline(OWNER, ".kr genre:romance -adult -ecchi"), (c) => {
+      const r = titlesOf(c);
+      const leaked = r.filter((x) => /\b(Adult|Ecchi)\b/.test(x.input_message_content.message_text));
+      return r.length >= 5 && leaked.length === 0 ? true : `hasil ${r.length}, masih Adult/Ecchi: ${leaked.map((x) => x.title).join(" | ")}`;
+    });
+    repo.setUserSetting(OWNER.id, "nsfw", "0");
     await step("genre: saja, dengan genre dua kata", inline(USER, ".kr genre: school life romance"), (c) => titlesOf(c).length >= 5 || `hasil ${titlesOf(c).length}`);
     await step("kata genre yang juga judul: judul yang cocok di urutan depan", inline(USER, ".kr horror game"), (c) => {
       const r = titlesOf(c);

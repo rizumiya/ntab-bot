@@ -201,6 +201,7 @@ const kiryuuConfig: DefineScraperConfig = {
     "Judul: <code>/kr solo leveling</code>",
     "Genre: <code>/kr action</code>. Beberapa genre sekaligus: <code>/kr mystery horror</code> (komik yang punya semuanya).",
     "Judul + genre: <code>/kr academy genre: action comedy</code>. Semua kata di kanan <code>genre:</code> dibaca sebagai genre.",
+    "Singkirkan genre dengan tanda minus: <code>/kr genre: romance -adult -ecchi</code>. Genre dua kata pakai tanda hubung: <code>-slice-of-life</code>.",
     "Tanpa kata kunci: komik yang baru diperbarui.",
     "Posisi baca terakhir tiap komik diingat: buka daftar chapternya lalu tekan <b>Lanjut</b>.",
     "Komik dengan banyak chapter: lompat dengan <b>⏪ 5</b> / <b>5 ⏩</b>, atau tekan <b>Cari chapter lewat inline</b> lalu ketik nomornya.",
@@ -225,8 +226,17 @@ const kiryuuConfig: DefineScraperConfig = {
     // Aturan kata kunci:
     //   - "judul genre: a b c" = semua yang di kanan "genre:" adalah genre, yang di kiri adalah judul;
     //   - tanpa "genre:", kata kunci dianggap genre hanya bila SEMUA katanya nama genre ("mystery horror"),
-    //     selain itu seluruhnya dicari sebagai judul.
+    //     selain itu seluruhnya dicari sebagai judul;
+    //   - "-genre" di posisi mana pun menyingkirkan komik bergenre itu ("genre:romance -adult").
+    //     Genre dua kata ditulis dengan tanda hubung: "-slice-of-life".
     const genres = await getGenres();
+    const excluded: number[] = [];
+    query = query.replace(/(^|[\s,])-([^\s,]+)/g, (whole, lead: string, name: string) => {
+      const id = genres.get(genreKey(name));
+      if (id === undefined) return whole; // bukan genre: biarkan, pencarian judul WordPress juga memahami "-kata"
+      excluded.push(id);
+      return lead;
+    });
     const marker = query.search(/\b(?:genre|g):/i);
     let text = (marker >= 0 ? query.slice(0, marker) : query).replace(/\s+/g, " ").trim();
     const genreIds = marker >= 0 ? genresIn(query.slice(marker).replace(/\b(?:genre|g):/gi, " "), genres, true) ?? [] : [];
@@ -242,7 +252,8 @@ const kiryuuConfig: DefineScraperConfig = {
     // Beberapa genre = komik yang memiliki semuanya (bawaan WordPress adalah "salah satu")
     const unique = [...new Set(genreIds)];
     const genreFilter =
-      unique.length > 1 ? `&genre[terms]=${unique.join(",")}&genre[operator]=AND` : unique.length === 1 ? `&genre=${unique[0]}` : "";
+      (unique.length > 1 ? `&genre[terms]=${unique.join(",")}&genre[operator]=AND` : unique.length === 1 ? `&genre=${unique[0]}` : "") +
+      (excluded.length > 0 ? `&genre_exclude=${[...new Set(excluded)].join(",")}` : "");
 
     const params =
       `?per_page=${PAGE_SIZE}&page=${page}&_fields=id,link,title,excerpt,metadata` +
