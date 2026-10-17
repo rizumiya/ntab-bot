@@ -4,6 +4,7 @@ import * as path from "path";
 import { Api, InlineKeyboard, InputFile } from "grammy";
 import { BotModule, BotContext } from "../../core/engine/types";
 import { registry } from "../../core/engine/registry";
+import { registerBotCommands } from "../../core/bot";
 import { repo } from "../../core/db/repo";
 import { dbFilePath, snapshotDatabase } from "../../core/db";
 import { config } from "../../core/config";
@@ -116,7 +117,8 @@ async function showGlobalModules(ctx: BotContext): Promise<void> {
     ctx,
     "🧩 <b>Fitur global</b>\n\n" +
       "Tekan untuk mematikan sebuah fitur bagi <b>semua pengguna</b> (mis. saat situs sumbernya bermasalah). " +
-      "Pengguna akan melihat keterangan \"sedang diperbaiki\". Owner tetap bisa memakainya untuk menguji.\n\n" +
+      "Fitur yang dimatikan hilang dari menu, bantuan, pengaturan, dan daftar perintah pengguna; " +
+      "bila dipanggil langsung, pengguna melihat keterangan \"sedang diperbaiki\". Owner tetap bisa memakainya untuk menguji.\n\n" +
       "✅ aktif · 🛠️ dimatikan",
     { keyboard: kb }
   );
@@ -303,6 +305,8 @@ const admin: BotModule = {
         const next = !repo.isModuleEnabled("global", 0, moduleId, true);
         repo.setModuleEnabled("global", 0, moduleId, next);
         await toast(ctx, `${mod.meta.name}: ${next ? "aktif untuk semua" : "dimatikan untuk semua"}`);
+        // Perintahnya ikut hilang/muncul di tombol "/" Telegram
+        await registerBotCommands(ctx.api);
         await showGlobalModules(ctx);
       }),
     },

@@ -1,8 +1,9 @@
-import { Bot } from "grammy";
+import { Api, Bot } from "grammy";
 import { autoRetry } from "@grammyjs/auto-retry";
 import { BotContext } from "./engine/types";
 import { repo } from "./db/repo";
 import { registry } from "./engine/registry";
+import { isGloballyEnabled } from "./engine/gate";
 import { createRouter } from "./engine/router";
 import { debug } from "./tools/text";
 
@@ -40,16 +41,20 @@ export function createBot(token: string): Bot<BotContext> {
   return bot;
 }
 
-/** Isi tombol "/" Telegram dari perintah modul yang bertanda `listed`. */
-export async function registerBotCommands(bot: Bot<BotContext>): Promise<void> {
+/**
+ * Isi tombol "/" Telegram dari perintah modul yang bertanda `listed`.
+ * Perintah fitur yang dimatikan owner tidak didaftarkan; panggil ulang setelah status fitur global berubah.
+ */
+export async function registerBotCommands(api: Api): Promise<void> {
   const commands = registry
     .all()
+    .filter(isGloballyEnabled)
     .flatMap((mod) => mod.commands ?? [])
     .filter((c) => c.listed)
     .map((c) => ({ command: c.command, description: c.description.slice(0, 256) }));
 
   try {
-    await bot.api.setMyCommands(commands);
+    await api.setMyCommands(commands);
   } catch (err) {
     console.warn("[Bot] Gagal mendaftarkan daftar perintah:", (err as Error).message);
   }

@@ -149,9 +149,26 @@ async function main() {
   await step("/admin untuk owner", say(OWNER, "/admin"), (c) => sent(c, "sendMessage", "Panel Admin"));
   await step("/status untuk owner", say(OWNER, "/status"), (c) => sent(c, "sendMessage", "Memori"));
   await step("/backup untuk owner", say(OWNER, "/backup"), (c) => sent(c, "sendDocument", "Backup"));
-  await step("owner mematikan fitur global", press(OWNER, "m:adm:mod:scraper-konachan"), (c) => sent(c, "answerCallbackQuery", "dimatikan"));
+  await step("owner mematikan fitur global", press(OWNER, "m:adm:mod:scraper-konachan"), (c) => {
+    const commands = JSON.stringify(c.find((x) => x.method === "setMyCommands")?.payload.commands ?? null);
+    if (commands === "null") return "daftar perintah tidak diperbarui";
+    return sent(c, "answerCallbackQuery", "dimatikan") === true && (!commands.includes('"kc"') || "/kc masih terdaftar");
+  });
   await step("fitur global mati: user ditolak", say(USER, "/kc test"), (c) => sent(c, "sendMessage", "dinonaktifkan"));
-  await step("owner menyalakan lagi", press(OWNER, "m:adm:mod:scraper-konachan"), (c) => sent(c, "answerCallbackQuery", "aktif"));
+  await step("fitur global mati: hilang dari bantuan user", press(USER, "m:menu:help"), (c) =>
+    sent(c, "editMessageText") === true && (!dump(c).includes("m:menu:mod:scraper-konachan") || "Konachan masih tampil")
+  );
+  await step("fitur global mati: halaman bantuannya tidak bisa dibuka user", press(USER, "m:menu:mod:scraper-konachan"), (c) =>
+    !textOf(c).includes("Konachan") || "halaman Konachan terbuka"
+  );
+  await step("fitur global mati: hilang dari menu utama dan pengaturan", press(USER, "m:menu:main"), (c) =>
+    !textOf(c).includes(".kc") || "Konachan masih di menu utama"
+  );
+  await step("  ...pengaturan fitur", press(USER, "m:set:mods"), (c) => !textOf(c).includes("Konachan") || "Konachan masih di pengaturan");
+  await step("fitur global mati: owner tetap melihatnya (bertanda perbaikan)", press(OWNER, "m:menu:help"), (c) => sent(c, "editMessageText", "m:menu:mod:scraper-konachan"));
+  await step("owner menyalakan lagi", press(OWNER, "m:adm:mod:scraper-konachan"), (c) =>
+    sent(c, "answerCallbackQuery", "aktif") === true && sent(c, "setMyCommands", '"kc"')
+  );
   await step("/vip oleh owner", say(OWNER, "/vip 2 30"), (c) => sent(c, "sendMessage", "VIP +30"));
   await step("user kini VIP: NSFW bisa dinyalakan", press(USER, "m:set:toggle:nsfw"), (c) => sent(c, "answerCallbackQuery", "aktif"));
   await step("/unvip oleh owner", say(OWNER, "/unvip @user2"), (c) => sent(c, "sendMessage", "dicabut"));

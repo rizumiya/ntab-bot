@@ -1,4 +1,5 @@
 import { InlineKeyboard } from "grammy";
+import { isGloballyEnabled } from "../../core/engine/gate";
 import { BotModule, BotContext } from "../../core/engine/types";
 import { registry } from "../../core/engine/registry";
 import { repo } from "../../core/db/repo";
@@ -14,7 +15,7 @@ const plan = PLANS.premium;
 function benefits(): string {
   const vipModules = registry
     .features()
-    .filter((m) => m.meta.minTier === "premium")
+    .filter((m) => m.meta.minTier === "premium" && isGloballyEnabled(m))
     .map((m) => `${m.meta.emoji} ${htmlEscape(m.meta.name)}`)
     .join(", ");
 

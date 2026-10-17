@@ -24,10 +24,23 @@ export function isPrivateChat(ctx: BotContext): boolean {
   return false;
 }
 
+/** Modul tidak sedang dimatikan owner untuk semua pengguna (panel admin > Fitur global). */
+export function isGloballyEnabled(mod: BotModule): boolean {
+  return Boolean(mod.meta.system) || repo.isModuleEnabled("global", 0, mod.meta.id, true);
+}
+
+/**
+ * Apakah modul ditampilkan di menu, bantuan, dan pengaturan user ini.
+ * Fitur yang dimatikan owner disembunyikan dari semua orang kecuali owner (yang tetap melihatnya, bertanda 🛠️).
+ */
+export function isListedFor(mod: BotModule, ctx: BotContext): boolean {
+  return isOwner(ctx.user.id) || isGloballyEnabled(mod);
+}
+
 /** Status modul bagi user ini, tanpa memperhitungkan jenis obrolan. */
 export function moduleStatus(mod: BotModule, ctx: BotContext): "on" | "off" | "vip" | "maintenance" {
   if (mod.meta.system) return "on";
-  if (!repo.isModuleEnabled("global", 0, mod.meta.id, true)) return "maintenance";
+  if (!isGloballyEnabled(mod)) return "maintenance";
   if (mod.meta.minTier === "premium" && ctx.user.tier !== "premium") return "vip";
   return repo.isModuleEnabled("user", ctx.user.id, mod.meta.id, mod.meta.defaultEnabled) ? "on" : "off";
 }

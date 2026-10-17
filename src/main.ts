@@ -39,7 +39,7 @@ async function start(): Promise<void> {
   const bot = createBot(config.botToken);
   await bot.init();
   await bot.api.deleteWebhook();
-  await registerBotCommands(bot);
+  await registerBotCommands(bot.api);
   startImageProxy();
 
   // Jumlah update yang diproses bersamaan dibatasi agar lonjakan pemakaian tidak membebani server

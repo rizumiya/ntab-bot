@@ -1,7 +1,7 @@
 import { InlineKeyboard } from "grammy";
 import { BotModule, BotContext, SettingDef } from "../../core/engine/types";
 import { registry } from "../../core/engine/registry";
-import { moduleStatus } from "../../core/engine/gate";
+import { isListedFor, moduleStatus } from "../../core/engine/gate";
 import { htmlEscape, isOwner } from "../../core/tools/text";
 import { cb, reply, show, toast } from "../../core/tools/ui";
 import { ExclusionRules, MAX_RULES, MAX_TAGS_PER_GROUP, formatExclusions, parseExclusions } from "../../core/tools/tags";
@@ -53,13 +53,14 @@ async function showSettings(ctx: BotContext): Promise<void> {
     kb.text(`${locked(ctx, s) ? "🔒" : isOn(ctx, s) ? "🟢" : "⚪"} ${s.label}`, cb(NS, "toggle", s.key)).row();
   }
 
-  const active = registry.features().filter((m) => moduleStatus(m, ctx) === "on").length;
+  const listed = registry.features().filter((m) => isListedFor(m, ctx));
+  const active = listed.filter((m) => moduleStatus(m, ctx) === "on").length;
   const exclusions = ctx.db.getUserSetting(ctx.user.id, "excluded_tags", "");
   lines.push(
     `<b>Tag yang disembunyikan</b>: ${exclusions ? `<code>${htmlEscape(exclusions)}</code>` : "belum ada"}`,
     "<i>Atur dengan perintah /exclude, mis. /exclude yaoi, (male, solo)</i>",
     "",
-    `<b>Fitur aktif</b>: ${active} dari ${registry.features().length}`,
+    `<b>Fitur aktif</b>: ${active} dari ${listed.length}`,
     "<i>Matikan fitur yang tidak Anda pakai agar menu lebih ringkas.</i>"
   );
 
@@ -80,7 +81,7 @@ async function showModules(ctx: BotContext): Promise<void> {
 
   // Satu baris pendek per fitur (tidak melipat di layar ponsel), dikelompokkan per jenis
   for (const group of GROUPS) {
-    const mods = registry.features().filter((m) => m.meta.category === group.category);
+    const mods = registry.features().filter((m) => m.meta.category === group.category && isListedFor(m, ctx));
     if (mods.length === 0) continue;
 
     lines.push("", `<b>${group.title}</b>`);

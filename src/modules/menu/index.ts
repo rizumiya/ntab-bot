@@ -1,7 +1,7 @@
 import { InlineKeyboard } from "grammy";
 import { BotModule, BotContext, CommandDef } from "../../core/engine/types";
 import { registry } from "../../core/engine/registry";
-import { moduleStatus } from "../../core/engine/gate";
+import { isListedFor, moduleStatus } from "../../core/engine/gate";
 import { config } from "../../core/config";
 import { Cooldown } from "../../core/tools/limit";
 import { htmlEscape, isOwner, formatDate } from "../../core/tools/text";
@@ -25,7 +25,7 @@ function visibleCommands(mod: BotModule, ctx: BotContext): CommandDef[] {
 async function showMainMenu(ctx: BotContext): Promise<void> {
   const searchers = registry
     .features()
-    .filter((m) => m.inline)
+    .filter((m) => m.inline && isListedFor(m, ctx))
     .map((m) => `<code>${m.inline!.prefix}</code> ${m.meta.emoji} ${htmlEscape(m.meta.name)}${STATUS_BADGE[moduleStatus(m, ctx)]}`)
     .join("\n");
 
@@ -64,7 +64,9 @@ async function showHelp(ctx: BotContext): Promise<void> {
     `Pilih fitur di bawah untuk melihat perintah dan contohnya.`;
 
   const kb = new InlineKeyboard();
-  const modules = registry.all().filter((m) => m.meta.id !== NS && (visibleCommands(m, ctx).length > 0 || m.inline));
+  const modules = registry
+    .all()
+    .filter((m) => m.meta.id !== NS && isListedFor(m, ctx) && (visibleCommands(m, ctx).length > 0 || m.inline));
   modules.forEach((m, i) => {
     kb.text(`${m.meta.emoji} ${m.meta.name}`, cb(NS, "mod", m.meta.id));
     if (i % 2 === 1) kb.row();
@@ -76,7 +78,7 @@ async function showHelp(ctx: BotContext): Promise<void> {
 
 async function showModuleHelp(ctx: BotContext, moduleId: string): Promise<void> {
   const mod = registry.get(moduleId);
-  if (!mod) return showHelp(ctx);
+  if (!mod || !isListedFor(mod, ctx)) return showHelp(ctx);
 
   const ACCESS_NOTE = { all: "", group_admin: " <i>(admin grup)</i>", owner: " <i>(owner)</i>" };
   const lines = [`${mod.meta.emoji} <b>${htmlEscape(mod.meta.name)}</b>${STATUS_BADGE[moduleStatus(mod, ctx)]}`, htmlEscape(mod.meta.description)];
