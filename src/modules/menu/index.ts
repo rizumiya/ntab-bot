@@ -1,7 +1,7 @@
 import { InlineKeyboard } from "grammy";
 import { BotModule, BotContext, CommandDef } from "../../core/engine/types";
 import { registry } from "../../core/engine/registry";
-import { isListedFor, moduleStatus } from "../../core/engine/gate";
+import { moduleStatus } from "../../core/engine/gate";
 import { config } from "../../core/config";
 import { Cooldown } from "../../core/tools/limit";
 import { htmlEscape, isOwner, formatDate } from "../../core/tools/text";
@@ -17,6 +17,16 @@ function accountLine(ctx: BotContext): string {
   return ctx.user.premium_until ? `⭐ VIP sampai ${formatDate(ctx.user.premium_until)}` : "⭐ VIP";
 }
 
+/**
+ * Menu dan bantuan hanya memuat fitur yang benar-benar bisa dipakai user ini sekarang:
+ * fitur khusus VIP (bagi akun gratis), fitur yang ia matikan di /settings, dan fitur yang dimatikan owner
+ * tidak ditampilkan. Owner tetap melihat fitur yang ia matikan untuk semua (bertanda 🛠️) agar bisa mengujinya.
+ */
+function usableBy(mod: BotModule, ctx: BotContext): boolean {
+  const status = moduleStatus(mod, ctx);
+  return status === "on" || (status === "maintenance" && isOwner(ctx.user.id));
+}
+
 /** Perintah yang boleh dilihat user ini (perintah khusus owner disembunyikan dari orang lain). */
 function visibleCommands(mod: BotModule, ctx: BotContext): CommandDef[] {
   return (mod.commands ?? []).filter((c) => c.access !== "owner" || isOwner(ctx.user.id));
@@ -25,7 +35,7 @@ function visibleCommands(mod: BotModule, ctx: BotContext): CommandDef[] {
 async function showMainMenu(ctx: BotContext): Promise<void> {
   const searchers = registry
     .features()
-    .filter((m) => m.inline && isListedFor(m, ctx))
+    .filter((m) => m.inline && usableBy(m, ctx))
     .map((m) => `<code>${m.inline!.prefix}</code> ${m.meta.emoji} ${htmlEscape(m.meta.name)}${STATUS_BADGE[moduleStatus(m, ctx)]}`)
     .join("\n");
 
@@ -61,12 +71,14 @@ async function showHelp(ctx: BotContext): Promise<void> {
     `1. <b>Perintah</b>: kirim <code>/wh sunset</code> (atau <code>.wh sunset</code>) ke bot untuk menerima album.\n` +
     `2. <b>Inline</b>: di chat mana pun ketik <code>@${me} .wh sunset</code>, lalu pilih hasilnya.\n` +
     `3. <b>Tombol</b>: tiap hasil punya tombol File HD, Bookmark, dan Sumber.\n\n` +
-    `Pilih fitur di bawah untuk melihat perintah dan contohnya.`;
+    `Pilih fitur di bawah untuk melihat perintah dan contohnya. ` +
+    `Yang tampil hanya fitur yang aktif di akun Anda; fitur lain bisa dinyalakan di /settings` +
+    (ctx.user.tier === "premium" ? "." : `, dan fitur khusus VIP terbuka lewat /upgrade.`);
 
   const kb = new InlineKeyboard();
   const modules = registry
     .all()
-    .filter((m) => m.meta.id !== NS && isListedFor(m, ctx) && (visibleCommands(m, ctx).length > 0 || m.inline));
+    .filter((m) => m.meta.id !== NS && usableBy(m, ctx) && (visibleCommands(m, ctx).length > 0 || m.inline));
   modules.forEach((m, i) => {
     kb.text(`${m.meta.emoji} ${m.meta.name}`, cb(NS, "mod", m.meta.id));
     if (i % 2 === 1) kb.row();
@@ -78,7 +90,7 @@ async function showHelp(ctx: BotContext): Promise<void> {
 
 async function showModuleHelp(ctx: BotContext, moduleId: string): Promise<void> {
   const mod = registry.get(moduleId);
-  if (!mod || !isListedFor(mod, ctx)) return showHelp(ctx);
+  if (!mod || !usableBy(mod, ctx)) return showHelp(ctx);
 
   const ACCESS_NOTE = { all: "", group_admin: " <i>(admin grup)</i>", owner: " <i>(owner)</i>" };
   const lines = [`${mod.meta.emoji} <b>${htmlEscape(mod.meta.name)}</b>${STATUS_BADGE[moduleStatus(mod, ctx)]}`, htmlEscape(mod.meta.description)];

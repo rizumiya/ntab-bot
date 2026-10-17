@@ -130,7 +130,9 @@ async function main() {
 
   console.log("\nHalaman bantuan setiap modul");
   for (const mod of registry.all()) {
-    await step(`bantuan ${mod.meta.id}`, press(USER, `m:menu:mod:${mod.meta.id}`), (c) => sent(c, "editMessageText", mod.meta.name.split(" ")[0]));
+    // Bantuan hanya membuka fitur yang aktif di akun itu; fitur bawaan-mati dinyalakan dulu untuk owner
+    if (!mod.meta.system) repo.setModuleEnabled("user", OWNER.id, mod.meta.id, true);
+    await step(`bantuan ${mod.meta.id}`, press(OWNER, `m:menu:mod:${mod.meta.id}`), (c) => sent(c, "editMessageText", mod.meta.name.split(" ")[0]));
   }
 
   console.log("\nTombol & izin");
@@ -153,6 +155,11 @@ async function main() {
     const commands = JSON.stringify(c.find((x) => x.method === "setMyCommands")?.payload.commands ?? null);
     if (commands === "null") return "daftar perintah tidak diperbarui";
     return sent(c, "answerCallbackQuery", "dimatikan") === true && (!commands.includes('"kc"') || "/kc masih terdaftar");
+  });
+  await step("bantuan akun gratis: tanpa fitur VIP", press(USER, "m:menu:help"), (c) => {
+    const text = dump(c);
+    if (!text.includes("m:menu:mod:scraper-wallhaven")) return "fitur gratis ikut hilang";
+    return !text.includes("m:menu:mod:scraper-gelbooru") || "Gelbooru (VIP) masih tampil";
   });
   await step("fitur global mati: user ditolak", say(USER, "/kc test"), (c) => sent(c, "sendMessage", "dinonaktifkan"));
   await step("fitur global mati: hilang dari bantuan user", press(USER, "m:menu:help"), (c) =>
